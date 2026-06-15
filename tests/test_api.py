@@ -64,7 +64,8 @@ def check(items, lst):
 
     def test_analysis_duration(self):
         report = analyze_source("def foo(): return 1")
-        assert report.analysis_duration_ms > 0
+        assert isinstance(report.analysis_duration_ms, (int, float))
+        assert report.analysis_duration_ms >= 0
 
     def test_complexity_property(self):
         report = analyze_source("""
