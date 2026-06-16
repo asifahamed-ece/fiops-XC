@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "fiopt"
+name = "fiops-complexity"
 version = "0.1.0"
 description = "FiOpt — AI-Powered Code Complexity & Optimization Engine"
 readme = "README.md"
