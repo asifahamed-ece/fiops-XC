@@ -1,715 +1,665 @@
 /**
- * ciopt — C Implementation of FiOpt
- * Report data structures and analysis aggregation
+ * ciopt_report.c - Report generation for CiOpt
+ * 
+ * This implements terminal, HTML, and JSON report generation,
+ * ported from the Python FiOpt project.
  */
 
 #include "ciopt.h"
-#include <string.h>
-#include <stdio.h>
+#include <ctype.h>
 
 /* ============================================================================
- * Function Info
+ * Helper Functions
  * ============================================================================ */
 
-FunctionInfo* function_info_create(void) {
-    FunctionInfo* info = (FunctionInfo*)calloc(1, sizeof(FunctionInfo));
-    if (!info) return NULL;
+static void escape_html(const char* src, char* dest, size_t dest_size) {
+    if (!src || !dest || dest_size == 0) return;
     
-    info->name = NULL;
-    info->lineno = 0;
-    info->end_lineno = 0;
-    info->col_offset = 0;
-    info->args = NULL;
-    info->num_args = 0;
-    info->decorators = NULL;
-    info->num_decorators = 0;
-    info->docstring = NULL;
-    info->is_method = false;
-    info->is_async = false;
-    info->is_generator = false;
-    info->is_property = false;
-    info->body_line_count = 0;
-    info->nested_functions = NULL;
-    info->num_nested_functions = 0;
-    
-    return info;
-}
-
-void function_info_free(FunctionInfo* info) {
-    if (!info) return;
-    
-    free(info->name);
-    str_array_free(info->args, info->num_args);
-    str_array_free(info->decorators, info->num_decorators);
-    free(info->docstring);
-    str_array_free(info->nested_functions, info->num_nested_functions);
-    free(info);
-}
-
-/* ============================================================================
- * Parsed Module
- * ============================================================================ */
-
-ParsedModule* parsed_module_create(void) {
-    ParsedModule* module = (ParsedModule*)calloc(1, sizeof(ParsedModule));
-    if (!module) return NULL;
-    
-    module->source = NULL;
-    module->source_len = 0;
-    module->functions = NULL;
-    module->num_functions = 0;
-    module->top_level_statements = 0;
-    module->num_imports = 0;
-    module->global_variables = NULL;
-    module->num_global_variables = 0;
-    
-    return module;
-}
-
-void parsed_module_free(ParsedModule* module) {
-    if (!module) return;
-    
-    free(module->source);
-    for (int i = 0; i < module->num_functions; i++) {
-        function_info_free(module->functions[i]);
-    }
-    free(module->functions);
-    str_array_free(module->global_variables, module->num_global_variables);
-    free(module);
-}
-
-/* ============================================================================
- * Source File
- * ============================================================================ */
-
-SourceFile* source_file_load(const char* path) {
-    if (!path) return NULL;
-    
-    FILE* f = fopen(path, "r");
-    if (!f) return NULL;
-    
-    /* Get file size */
-    fseek(f, 0, SEEK_END);
-    long size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    
-    /* Allocate buffer */
-    char* content = (char*)malloc(size + 1);
-    if (!content) {
-        fclose(f);
-        return NULL;
-    }
-    
-    /* Read content */
-    size_t read_size = fread(content, 1, size, f);
-    content[read_size] = '\0';
-    fclose(f);
-    
-    /* Count lines */
-    int line_count = 0;
-    for (const char* p = content; *p; p++) {
-        if (*p == '\n') line_count++;
-    }
-    if (read_size > 0 && content[read_size - 1] != '\n') {
-        line_count++;
-    }
-    
-    /* Create SourceFile */
-    SourceFile* file = (SourceFile*)calloc(1, sizeof(SourceFile));
-    if (!file) {
-        free(content);
-        return NULL;
-    }
-    
-    file->path = str_duplicate(path);
-    file->content = content;
-    file->line_count = line_count;
-    file->encoding = str_duplicate("utf-8");
-    
-    return file;
-}
-
-void source_file_free(SourceFile* file) {
-    if (!file) return;
-    
-    free(file->path);
-    free(file->content);
-    free(file->encoding);
-    free(file);
-}
-
-char* source_file_get_line(SourceFile* file, int lineno) {
-    if (!file || !file->content || lineno < 1) return NULL;
-    
-    const char* p = file->content;
-    int current_line = 1;
-    
-    while (*p && current_line < lineno) {
-        if (*p == '\n') current_line++;
-        p++;
-    }
-    
-    if (current_line != lineno) return NULL;
-    
-    /* Find end of line */
-    const char* start = p;
-    while (*p && *p != '\n') p++;
-    
-    size_t len = p - start;
-    char* line = (char*)malloc(len + 1);
-    if (line) {
-        memcpy(line, start, len);
-        line[len] = '\0';
-    }
-    
-    return line;
-}
-
-/* ============================================================================
- * Loop Analysis
- * ============================================================================ */
-
-int loop_analysis_max_depth(LoopAnalysis* analysis) {
-    if (!analysis || analysis->num_loops == 0) return 0;
-    
-    int max_depth = 0;
-    for (int i = 0; i < analysis->num_loops; i++) {
-        if (analysis->loops[i].depth > max_depth) {
-            max_depth = analysis->loops[i].depth;
+    size_t j = 0;
+    for (size_t i = 0; src[i] && j < dest_size - 1; i++) {
+        switch (src[i]) {
+            case '<':
+                if (j + 4 < dest_size) {
+                    memcpy(dest + j, "&lt;", 4);
+                    j += 4;
+                }
+                break;
+            case '>':
+                if (j + 4 < dest_size) {
+                    memcpy(dest + j, "&gt;", 4);
+                    j += 4;
+                }
+                break;
+            case '&':
+                if (j + 5 < dest_size) {
+                    memcpy(dest + j, "&amp;", 5);
+                    j += 5;
+                }
+                break;
+            case '"':
+                if (j + 6 < dest_size) {
+                    memcpy(dest + j, "&quot;", 6);
+                    j += 6;
+                }
+                break;
+            default:
+                dest[j++] = src[i];
         }
     }
-    return max_depth;
-}
-
-int loop_analysis_total_loops(LoopAnalysis* analysis) {
-    return analysis ? analysis->num_loops : 0;
-}
-
-void loop_analysis_free(LoopAnalysis* analysis) {
-    if (!analysis) return;
-    
-    for (int i = 0; i < analysis->num_loops; i++) {
-        LoopDetail* loop = &analysis->loops[i];
-        for (int j = 0; j < loop->num_variables; j++) {
-            free(loop->variables[j].name);
-            free(loop->variables[j].iterable);
-        }
-        free(loop->variables);
-        free(loop->invariant_lines);
-        str_array_free(loop->expensive_operations, loop->num_expensive_operations);
-        str_array_free(loop->function_calls, loop->num_function_calls);
-    }
-    free(analysis->loops);
-    free(analysis->function_name);
-    free(analysis);
+    dest[j] = '\0';
 }
 
 /* ============================================================================
- * Recursion Info
+ * Function Report Implementation
  * ============================================================================ */
 
-void recursion_info_free(RecursionInfo* info) {
-    if (!info) return;
-    
-    free(info->function_name);
-    free(info->direct_calls);
-    free(info->base_case_lines);
-    free(info->tail_recursive_lines);
-    free(info->memoization_reason);
-    free(info->depth_pattern);
-    free(info);
-}
-
-/* ============================================================================
- * Complexity Result
- * ============================================================================ */
-
-bool complexity_is_efficient(ComplexityResult* result) {
-    if (!result) return false;
-    return result->estimated_complexity <= O_N_LOG_N;
-}
-
-char* complexity_summary(ComplexityResult* result) {
-    if (!result) return NULL;
-    
-    char buffer[256];
-    snprintf(buffer, sizeof(buffer), "%s: %s (confidence: %.0f%%)",
-        result->function_name,
-        complexity_to_string(result->estimated_complexity),
-        result->confidence * 100.0f);
-    
-    return str_duplicate(buffer);
-}
-
-void complexity_result_free(ComplexityResult* result) {
-    if (!result) return;
-    
-    free(result->function_name);
-    for (int i = 0; i < result->num_explanations; i++) {
-        free(result->explanations[i].source);
-        free(result->explanations[i].description);
-        free(result->explanations[i].detail);
-    }
-    free(result->explanations);
-    loop_analysis_free(result->loop_analysis);
-    recursion_info_free(result->recursion_info);
-    free(result->bottleneck_lines);
-    free(result->bottleneck_description);
-    str_array_free(result->warnings, result->num_warnings);
-    free(result);
-}
-
-/* ============================================================================
- * Pattern Analysis
- * ============================================================================ */
-
-int pattern_analysis_critical_count(PatternAnalysis* analysis) {
-    if (!analysis) return 0;
-    
-    int count = 0;
-    for (int i = 0; i < analysis->num_anti_patterns; i++) {
-        if (analysis->anti_patterns[i].severity == PATTERN_SEVERITY_CRITICAL) {
-            count++;
-        }
-    }
-    return count;
-}
-
-int pattern_analysis_warning_count(PatternAnalysis* analysis) {
-    if (!analysis) return 0;
-    
-    int count = 0;
-    for (int i = 0; i < analysis->num_anti_patterns; i++) {
-        if (analysis->anti_patterns[i].severity == PATTERN_SEVERITY_WARNING) {
-            count++;
-        }
-    }
-    return count;
-}
-
-void pattern_analysis_free(PatternAnalysis* analysis) {
-    if (!analysis) return;
-    
-    for (int i = 0; i < analysis->num_anti_patterns; i++) {
-        AntiPattern* p = &analysis->anti_patterns[i];
-        free(p->name);
-        free(p->description);
-        free(p->suggestion);
-        free(p->estimated_impact);
-        free(p->code_snippet);
-    }
-    free(analysis->anti_patterns);
-    free(analysis->function_name);
-    free(analysis);
-}
-
-/* ============================================================================
- * Data Structure Analysis
- * ============================================================================ */
-
-void data_structure_analysis_free(DataStructureAnalysis* analysis) {
-    if (!analysis) return;
-    
-    for (int i = 0; i < analysis->num_issues; i++) {
-        DataStructureIssue* issue = &analysis->issues[i];
-        free(issue->variable_name);
-        free(issue->current_type);
-        free(issue->suggested_type);
-        free(issue->description);
-        free(issue->suggestion);
-        free(issue->estimated_impact);
-    }
-    free(analysis->issues);
-    free(analysis->function_name);
-    free(analysis);
-}
-
-/* ============================================================================
- * Dead Code Analysis
- * ============================================================================ */
-
-int dead_code_total(DeadCodeAnalysis* analysis) {
-    return analysis ? analysis->num_items : 0;
-}
-
-int dead_code_unreachable_count(DeadCodeAnalysis* analysis) {
-    if (!analysis) return 0;
-    
-    int count = 0;
-    for (int i = 0; i < analysis->num_items; i++) {
-        if (strcmp(analysis->items[i].kind, "unreachable") == 0) {
-            count++;
-        }
-    }
-    return count;
-}
-
-void dead_code_analysis_free(DeadCodeAnalysis* analysis) {
-    if (!analysis) return;
-    
-    for (int i = 0; i < analysis->num_items; i++) {
-        DeadCodeItem* item = &analysis->items[i];
-        free(item->kind);
-        free(item->name);
-        free(item->description);
-        free(item->suggestion);
-    }
-    free(analysis->items);
-    free(analysis);
-}
-
-/* ============================================================================
- * Function Report
- * ============================================================================ */
-
-int function_report_total_issues(FunctionReport* report) {
-    if (!report) return 0;
-    
-    int count = 0;
-    if (report->patterns) {
-        count += report->patterns->num_anti_patterns;
-    }
-    if (report->data_structure) {
-        count += report->data_structure->num_issues;
-    }
-    if (report->complexity) {
-        count += report->complexity->num_warnings;
-    }
-    return count;
-}
-
-char* function_report_summary(FunctionReport* report) {
+FunctionReport* function_report_create(const char* func_name, const char* file_path) {
+    FunctionReport* report = (FunctionReport*)calloc(1, sizeof(FunctionReport));
     if (!report) return NULL;
     
-    char buffer[512];
-    const char* complexity_str = report->complexity
-        ? complexity_to_string(report->complexity->estimated_complexity)
-        : "Unknown";
+    report->function_name = ciopt_strdup(func_name ? func_name : "<unknown>");
+    report->file_path = ciopt_strdup(file_path ? file_path : "");
+    report->lineno = 0;
+    report->end_lineno = 0;
+    report->line_count = 0;
+    report->complexity = NULL;
+    report->loops = NULL;
+    report->recursion = NULL;
+    report->data_structures = NULL;
+    report->dead_code = NULL;
+    report->patterns = NULL;
+    report->cfg = NULL;
     
-    int issues = function_report_total_issues(report);
-    
-    snprintf(buffer, sizeof(buffer),
-        "%s (L%d-%d): %s | %d issue(s)",
-        report->name, report->lineno, report->end_lineno,
-        complexity_str, issues);
-    
-    return str_duplicate(buffer);
+    return report;
 }
 
 void function_report_free(FunctionReport* report) {
     if (!report) return;
-    
-    free(report->name);
+    free(report->function_name);
+    free(report->file_path);
     complexity_result_free(report->complexity);
+    loop_analysis_free(report->loops);
+    recursion_info_free(report->recursion);
+    data_structure_analysis_free(report->data_structures);
+    dead_code_analysis_free(report->dead_code);
     pattern_analysis_free(report->patterns);
-    data_structure_analysis_free(report->data_structure);
+    cfg_free(report->cfg);
     free(report);
 }
 
 /* ============================================================================
- * File Report
+ * File Report Implementation
  * ============================================================================ */
 
-ComplexityClass file_report_worst_complexity(FileReport* report) {
-    if (!report || report->num_function_reports == 0) return O_1;
-    
-    ComplexityClass worst = O_1;
-    for (int i = 0; i < report->num_function_reports; i++) {
-        FunctionReport* func = report->function_reports[i];
-        if (func->complexity) {
-            if (complexity_compare(func->complexity->estimated_complexity, worst) > 0) {
-                worst = func->complexity->estimated_complexity;
-            }
-        }
-    }
-    return worst;
-}
-
-int file_report_total_functions(FileReport* report) {
-    return report ? report->num_function_reports : 0;
-}
-
-int file_report_total_issues(FileReport* report) {
-    if (!report) return 0;
-    
-    int count = 0;
-    for (int i = 0; i < report->num_function_reports; i++) {
-        count += function_report_total_issues(report->function_reports[i]);
-    }
-    if (report->dead_code) {
-        count += dead_code_total(report->dead_code);
-    }
-    return count;
-}
-
-FunctionReport** file_report_critical_functions(FileReport* report, int* count) {
-    *count = 0;
+FileReport* file_report_create(const char* file_path) {
+    FileReport* report = (FileReport*)calloc(1, sizeof(FileReport));
     if (!report) return NULL;
     
-    /* First pass: count critical functions */
-    int critical_count = 0;
-    for (int i = 0; i < report->num_function_reports; i++) {
-        if (report->function_reports[i]->severity == SEVERITY_CRITICAL) {
-            critical_count++;
-        }
-    }
+    report->file_path = ciopt_strdup(file_path ? file_path : "");
+    report->file_size = 0;
+    report->total_lines = 0;
+    report->code_lines = 0;
+    report->comment_lines = 0;
+    report->blank_lines = 0;
+    report->functions = NULL;
+    report->num_functions = 0;
+    report->import_count = 0;
+    report->imports = NULL;
+    report->classes = NULL;
+    report->num_classes = 0;
+    report->maintainability_index = 0.0;
     
-    if (critical_count == 0) return NULL;
-    
-    /* Second pass: collect critical functions */
-    FunctionReport** critical = (FunctionReport**)malloc(
-        critical_count * sizeof(FunctionReport*)
-    );
-    if (!critical) return NULL;
-    
-    int idx = 0;
-    for (int i = 0; i < report->num_function_reports; i++) {
-        if (report->function_reports[i]->severity == SEVERITY_CRITICAL) {
-            critical[idx++] = report->function_reports[i];
-        }
-    }
-    
-    *count = critical_count;
-    return critical;
+    return report;
 }
 
 void file_report_free(FileReport* report) {
     if (!report) return;
+    free(report->file_path);
     
-    free(report->filepath);
-    for (int i = 0; i < report->num_function_reports; i++) {
-        function_report_free(report->function_reports[i]);
+    for (int i = 0; i < report->num_functions; i++) {
+        function_report_free(report->functions[i]);
     }
-    free(report->function_reports);
-    dead_code_analysis_free(report->dead_code);
-    str_array_free(report->parse_errors, report->num_parse_errors);
+    free(report->functions);
+    
+    ciopt_free_string_array(report->imports, report->import_count);
+    ciopt_free_string_array(report->classes, report->num_classes);
+    
     free(report);
 }
 
 /* ============================================================================
- * Analysis Report
+ * Analysis Report Implementation
  * ============================================================================ */
 
-int analysis_report_total_files(AnalysisReport* report) {
-    return report ? report->num_files : 0;
-}
-
-int analysis_report_total_functions(AnalysisReport* report) {
-    if (!report) return 0;
-    
-    int total = 0;
-    for (int i = 0; i < report->num_files; i++) {
-        total += file_report_total_functions(report->files[i]);
-    }
-    return total;
-}
-
-int analysis_report_total_lines(AnalysisReport* report) {
-    if (!report) return 0;
-    
-    int total = 0;
-    for (int i = 0; i < report->num_files; i++) {
-        total += report->files[i]->line_count;
-    }
-    return total;
-}
-
-int analysis_report_total_issues(AnalysisReport* report) {
-    if (!report) return 0;
-    
-    int total = 0;
-    for (int i = 0; i < report->num_files; i++) {
-        total += file_report_total_issues(report->files[i]);
-    }
-    return total;
-}
-
-ComplexityClass analysis_report_worst_complexity(AnalysisReport* report) {
-    if (!report || report->num_files == 0) return O_1;
-    
-    ComplexityClass worst = O_1;
-    for (int i = 0; i < report->num_files; i++) {
-        ComplexityClass file_worst = file_report_worst_complexity(report->files[i]);
-        if (complexity_compare(file_worst, worst) > 0) {
-            worst = file_worst;
-        }
-    }
-    return worst;
-}
-
-const char* analysis_report_complexity(AnalysisReport* report) {
-    static const char* unknown = "Unknown";
-    if (!report) return unknown;
-    return complexity_to_string(analysis_report_worst_complexity(report));
-}
-
-char** analysis_report_bottlenecks(AnalysisReport* report, int* count) {
-    *count = 0;
+AnalysisReport* analysis_report_create(const char* project_path) {
+    AnalysisReport* report = (AnalysisReport*)calloc(1, sizeof(AnalysisReport));
     if (!report) return NULL;
     
-    /* Estimate maximum bottlenecks */
-    int max_bottlenecks = report->num_files * 10;
-    char** bottlenecks = (char**)malloc(max_bottlenecks * sizeof(char*));
-    if (!bottlenecks) return NULL;
+    report->project_path = ciopt_strdup(project_path ? project_path : "");
+    report->analysis_timestamp = time(NULL);
+    report->fiopt_version = ciopt_strdup(CIOPT_VERSION);
+    report->config = config_create_default();
+    report->files = NULL;
+    report->num_files = 0;
+    report->summary.total_files = 0;
+    report->summary.total_functions = 0;
+    report->summary.total_lines = 0;
+    report->summary.total_code_lines = 0;
+    report->summary.avg_function_length = 0.0;
+    report->summary.avg_complexity = 0.0;
+    report->summary.max_complexity = 0;
+    report->summary.critical_issues = 0;
+    report->summary.warning_issues = 0;
+    report->summary.info_issues = 0;
+    report->summary.most_complex_function = NULL;
+    report->summary.largest_file = NULL;
+    report->errors = NULL;
+    report->num_errors = 0;
+    report->suggestions = NULL;
+    report->num_suggestions = 0;
     
-    int idx = 0;
-    for (int i = 0; i < report->num_files; i++) {
-        FileReport* file = report->files[i];
-        for (int j = 0; j < file->num_function_reports; j++) {
-            FunctionReport* func = file->function_reports[j];
-            if (func->complexity && 
-                func->complexity->estimated_complexity >= O_N_SQUARED) {
-                
-                char buffer[512];
-                const char* filepath = file->filepath ? file->filepath : "unknown";
-                const char* name = func->name ? func->name : "unknown";
-                const char* complexity = complexity_to_string(
-                    func->complexity->estimated_complexity);
-                
-                if (func->complexity->bottleneck_description) {
-                    snprintf(buffer, sizeof(buffer),
-                        "%s:%s (L%d) — %s: %s",
-                        filepath, name, func->lineno, complexity,
-                        func->complexity->bottleneck_description);
-                } else {
-                    snprintf(buffer, sizeof(buffer),
-                        "%s:%s (L%d) — %s",
-                        filepath, name, func->lineno, complexity);
-                }
-                
-                bottlenecks[idx++] = str_duplicate(buffer);
-                if (idx >= max_bottlenecks - 1) break;
-            }
-        }
-        if (idx >= max_bottlenecks - 1) break;
-    }
-    
-    *count = idx;
-    return bottlenecks;
-}
-
-char** analysis_report_suggestions(AnalysisReport* report, int* count) {
-    *count = 0;
-    if (!report) return NULL;
-    
-    /* Estimate maximum suggestions */
-    int max_suggestions = report->num_files * 20;
-    char** suggestions = (char**)malloc(max_suggestions * sizeof(char*));
-    if (!suggestions) return NULL;
-    
-    int idx = 0;
-    for (int i = 0; i < report->num_files; i++) {
-        FileReport* file = report->files[i];
-        for (int j = 0; j < file->num_function_reports; j++) {
-            FunctionReport* func = file->function_reports[j];
-            const char* filepath = file->filepath ? file->filepath : "unknown";
-            const char* name = func->name ? func->name : "unknown";
-            
-            /* From complexity warnings */
-            if (func->complexity) {
-                for (int k = 0; k < func->complexity->num_warnings; k++) {
-                    suggestions[idx++] = str_duplicate(func->complexity->warnings[k]);
-                    if (idx >= max_suggestions - 1) break;
-                }
-            }
-            
-            /* From anti-patterns */
-            if (func->patterns) {
-                for (int k = 0; k < func->patterns->num_anti_patterns; k++) {
-                    AntiPattern* p = &func->patterns->anti_patterns[k];
-                    char buffer[512];
-                    snprintf(buffer, sizeof(buffer),
-                        "%s:%s (L%d): %s",
-                        filepath, name, p->lineno, p->suggestion);
-                    suggestions[idx++] = str_duplicate(buffer);
-                    if (idx >= max_suggestions - 1) break;
-                }
-            }
-            
-            /* From data structure issues */
-            if (func->data_structure) {
-                for (int k = 0; k < func->data_structure->num_issues; k++) {
-                    DataStructureIssue* issue = &func->data_structure->issues[k];
-                    char buffer[512];
-                    snprintf(buffer, sizeof(buffer),
-                        "%s:%s (L%d): %s",
-                        filepath, name, issue->lineno, issue->suggestion);
-                    suggestions[idx++] = str_duplicate(buffer);
-                    if (idx >= max_suggestions - 1) break;
-                }
-            }
-            
-            if (idx >= max_suggestions - 1) break;
-        }
-        if (idx >= max_suggestions - 1) break;
-    }
-    
-    *count = idx;
-    return suggestions;
-}
-
-char* analysis_report_summary(AnalysisReport* report) {
-    if (!report) return NULL;
-    
-    size_t buf_size = 4096;
-    char* buffer = (char*)malloc(buf_size);
-    if (!buffer) return NULL;
-    
-    size_t offset = 0;
-    offset += snprintf(buffer + offset, buf_size - offset,
-        "FiOpt Analysis Report\n");
-    offset += snprintf(buffer + offset, buf_size - offset,
-        "==================================================\n");
-    offset += snprintf(buffer + offset, buf_size - offset,
-        "Files analyzed: %d\n", analysis_report_total_files(report));
-    offset += snprintf(buffer + offset, buf_size - offset,
-        "Functions analyzed: %d\n", analysis_report_total_functions(report));
-    offset += snprintf(buffer + offset, buf_size - offset,
-        "Total lines: %d\n", analysis_report_total_lines(report));
-    offset += snprintf(buffer + offset, buf_size - offset,
-        "Worst complexity: %s\n", analysis_report_complexity(report));
-    offset += snprintf(buffer + offset, buf_size - offset,
-        "Total issues: %d\n", analysis_report_total_issues(report));
-    
-    /* Add bottlenecks (up to 5) */
-    int bottleneck_count = 0;
-    char** bottlenecks = analysis_report_bottlenecks(report, &bottleneck_count);
-    if (bottlenecks && bottleneck_count > 0) {
-        offset += snprintf(buffer + offset, buf_size - offset,
-            "\nBottlenecks:\n");
-        int limit = bottleneck_count < 5 ? bottleneck_count : 5;
-        for (int i = 0; i < limit; i++) {
-            offset += snprintf(buffer + offset, buf_size - offset,
-                "  • %s\n", bottlenecks[i]);
-        }
-        str_array_free(bottlenecks, bottleneck_count);
-    }
-    
-    /* Add suggestions (up to 5) */
-    int suggestion_count = 0;
-    char** suggestions = analysis_report_suggestions(report, &suggestion_count);
-    if (suggestions && suggestion_count > 0) {
-        offset += snprintf(buffer + offset, buf_size - offset,
-            "\nSuggestions:\n");
-        int limit = suggestion_count < 5 ? suggestion_count : 5;
-        for (int i = 0; i < limit; i++) {
-            offset += snprintf(buffer + offset, buf_size - offset,
-                "  • %s\n", suggestions[i]);
-        }
-        str_array_free(suggestions, suggestion_count);
-    }
-    
-    return buffer;
+    return report;
 }
 
 void analysis_report_free(AnalysisReport* report) {
     if (!report) return;
+    free(report->project_path);
+    free(report->fiopt_version);
+    config_free(report->config);
     
     for (int i = 0; i < report->num_files; i++) {
         file_report_free(report->files[i]);
     }
     free(report->files);
-    free(report->timestamp);
-    free(report->fiopt_version);
+    
+    free(report->summary.most_complex_function);
+    free(report->summary.largest_file);
+    
+    ciopt_free_string_array(report->errors, report->num_errors);
+    ciopt_free_string_array(report->suggestions, report->num_suggestions);
+    
     free(report);
+}
+
+/* ============================================================================
+ * Terminal Report Generation
+ * ============================================================================ */
+
+char* generate_terminal_report(AnalysisReport* report) {
+    if (!report) return NULL;
+    
+    size_t buf_size = 65536;
+    char* buf = (char*)malloc(buf_size);
+    if (!buf) return NULL;
+    
+    size_t offset = 0;
+    
+    /* Header */
+    offset += snprintf(buf + offset, buf_size - offset,
+        "\n================================================================================\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  CiOpt - Code Complexity & Optimization Analysis Report\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  Version: %s\n", report->fiopt_version);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "================================================================================\n\n");
+    
+    offset += snprintf(buf + offset, buf_size - offset,
+        "Project: %s\n", report->project_path);
+    
+    char time_buf[64];
+    strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", 
+             localtime(&report->analysis_timestamp));
+    offset += snprintf(buf + offset, buf_size - offset,
+        "Analyzed: %s\n\n", time_buf);
+    
+    /* Summary */
+    offset += snprintf(buf + offset, buf_size - offset,
+        "--------------------------------------------------------------------------------\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "SUMMARY\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "--------------------------------------------------------------------------------\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  Files analyzed:      %d\n", report->summary.total_files);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  Total functions:     %d\n", report->summary.total_functions);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  Total lines:         %d\n", report->summary.total_lines);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  Code lines:          %d\n", report->summary.total_code_lines);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  Avg function length: %.1f lines\n", report->summary.avg_function_length);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  Avg complexity:      %.2f\n", report->summary.avg_complexity);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  Max complexity:      %d\n", report->summary.max_complexity);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  Critical issues:     %d\n", report->summary.critical_issues);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  Warnings:            %d\n", report->summary.warning_issues);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  Info:                %d\n", report->summary.info_issues);
+    
+    if (report->summary.most_complex_function) {
+        offset += snprintf(buf + offset, buf_size - offset,
+            "\n  Most complex function: %s\n", report->summary.most_complex_function);
+    }
+    
+    /* Per-file reports */
+    for (int f = 0; f < report->num_files; f++) {
+        FileReport* fr = report->files[f];
+        
+        offset += snprintf(buf + offset, buf_size - offset,
+            "\n--------------------------------------------------------------------------------\n");
+        offset += snprintf(buf + offset, buf_size - offset,
+            "FILE: %s\n", fr->file_path);
+        offset += snprintf(buf + offset, buf_size - offset,
+            "--------------------------------------------------------------------------------\n");
+        offset += snprintf(buf + offset, buf_size - offset,
+            "  Lines: %d total, %d code, %d comments, %d blank\n",
+            fr->total_lines, fr->code_lines, fr->comment_lines, fr->blank_lines);
+        offset += snprintf(buf + offset, buf_size - offset,
+            "  Functions: %d, Classes: %d, Imports: %d\n",
+            fr->num_functions, fr->num_classes, fr->import_count);
+        offset += snprintf(buf + offset, buf_size - offset,
+            "  Maintainability Index: %.1f/100\n\n", fr->maintainability_index);
+        
+        /* Function details */
+        for (int i = 0; i < fr->num_functions; i++) {
+            FunctionReport* fn = fr->functions[i];
+            
+            offset += snprintf(buf + offset, buf_size - offset,
+                "  Function: %s (lines %d-%d)\n",
+                fn->function_name, fn->lineno, fn->end_lineno);
+            
+            if (fn->complexity) {
+                offset += snprintf(buf + offset, buf_size - offset,
+                    "    Complexity: %s (confidence: %.0f%%)\n",
+                    complexity_to_string(fn->complexity->estimated_complexity),
+                    fn->complexity->confidence * 100);
+                
+                if (fn->complexity->bottleneck_description) {
+                    offset += snprintf(buf + offset, buf_size - offset,
+                        "    Bottleneck: %s\n", fn->complexity->bottleneck_description);
+                }
+            }
+            
+            if (fn->loops && fn->loops->num_loops > 0) {
+                offset += snprintf(buf + offset, buf_size - offset,
+                    "    Loops: %d detected\n", fn->loops->num_loops);
+            }
+            
+            if (fn->recursion && fn->recursion->is_recursive) {
+                offset += snprintf(buf + offset, buf_size - offset,
+                    "    Recursion: detected (%s)\n",
+                    fn->recursion->depth_pattern ? fn->recursion->depth_pattern : "unknown");
+            }
+            
+            if (fn->patterns && fn->patterns->num_patterns > 0) {
+                int critical = 0, warning = 0;
+                for (int p = 0; p < fn->patterns->num_patterns; p++) {
+                    if (fn->patterns->anti_patterns[p]->severity == SEVERITY_CRITICAL) critical++;
+                    else if (fn->patterns->anti_patterns[p]->severity == SEVERITY_WARNING) warning++;
+                }
+                if (critical > 0 || warning > 0) {
+                    offset += snprintf(buf + offset, buf_size - offset,
+                        "    Anti-patterns: %d critical, %d warnings\n", critical, warning);
+                }
+            }
+            
+            if (fn->dead_code && fn->dead_code->num_items > 0) {
+                offset += snprintf(buf + offset, buf_size - offset,
+                    "    Dead code: %d items\n", fn->dead_code->num_items);
+            }
+        }
+    }
+    
+    /* Errors */
+    if (report->num_errors > 0) {
+        offset += snprintf(buf + offset, buf_size - offset,
+            "\n--------------------------------------------------------------------------------\n");
+        offset += snprintf(buf + offset, buf_size - offset,
+            "ERRORS\n");
+        offset += snprintf(buf + offset, buf_size - offset,
+            "--------------------------------------------------------------------------------\n");
+        for (int i = 0; i < report->num_errors; i++) {
+            offset += snprintf(buf + offset, buf_size - offset,
+                "  - %s\n", report->errors[i]);
+        }
+    }
+    
+    /* Suggestions */
+    if (report->num_suggestions > 0) {
+        offset += snprintf(buf + offset, buf_size - offset,
+            "\n--------------------------------------------------------------------------------\n");
+        offset += snprintf(buf + offset, buf_size - offset,
+            "SUGGESTIONS\n");
+        offset += snprintf(buf + offset, buf_size - offset,
+            "--------------------------------------------------------------------------------\n");
+        for (int i = 0; i < report->num_suggestions; i++) {
+            offset += snprintf(buf + offset, buf_size - offset,
+                "  - %s\n", report->suggestions[i]);
+        }
+    }
+    
+    offset += snprintf(buf + offset, buf_size - offset,
+        "\n================================================================================\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  End of Report\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "================================================================================\n");
+    
+    return buf;
+}
+
+/* ============================================================================
+ * HTML Report Generation
+ * ============================================================================ */
+
+char* generate_html_report(AnalysisReport* report) {
+    if (!report) return NULL;
+    
+    size_t buf_size = 131072;
+    char* buf = (char*)malloc(buf_size);
+    if (!buf) return NULL;
+    
+    size_t offset = 0;
+    
+    /* HTML Header */
+    offset += snprintf(buf + offset, buf_size - offset,
+        "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  <meta charset=\"UTF-8\">\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  <title>CiOpt Analysis Report</title>\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  <style>\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    h1 { color: #333; border-bottom: 2px solid #4CAF50; padding-bottom: 10px; }\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    h2 { color: #555; margin-top: 30px; }\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    .stat-box { background: #f9f9f9; padding: 15px; border-radius: 4px; border-left: 4px solid #4CAF50; }\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    .stat-value { font-size: 24px; font-weight: bold; color: #333; }\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    .stat-label { color: #666; font-size: 14px; }\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    .critical { border-left-color: #f44336; }\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    .warning { border-left-color: #ff9800; }\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    table { width: 100%%; border-collapse: collapse; margin: 15px 0; }\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    th { background: #4CAF50; color: white; }\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    tr:hover { background: #f5f5f5; }\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    .complexity-O_1 { color: #4CAF50; }\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    .complexity-O_N { color: #2196F3; }\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    .complexity-O_N_LOG_N { color: #FF9800; }\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    .complexity-O_N_SQUARED, .complexity-O_N_CUBED { color: #f44336; }\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    .complexity-O_2_N, .complexity-O_N_FACTORIAL { color: #9C27B0; font-weight: bold; }\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    pre { background: #f4f4f4; padding: 10px; border-radius: 4px; overflow-x: auto; }\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    code { font-family: 'Courier New', monospace; }\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  </style>\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "</head>\n<body>\n<div class=\"container\">\n");
+    
+    /* Title */
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  <h1>CiOpt Analysis Report</h1>\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  <p><strong>Version:</strong> %s | <strong>Project:</strong> %s</p>\n",
+        report->fiopt_version, report->project_path);
+    
+    /* Summary */
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  <h2>Summary</h2>\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  <div class=\"summary\">\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    <div class=\"stat-box\"><div class=\"stat-value\">%d</div><div class=\"stat-label\">Files</div></div>\n",
+        report->summary.total_files);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    <div class=\"stat-box\"><div class=\"stat-value\">%d</div><div class=\"stat-label\">Functions</div></div>\n",
+        report->summary.total_functions);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    <div class=\"stat-box\"><div class=\"stat-value\">%d</div><div class=\"stat-label\">Total Lines</div></div>\n",
+        report->summary.total_lines);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    <div class=\"stat-box critical\"><div class=\"stat-value\">%d</div><div class=\"stat-label\">Critical Issues</div></div>\n",
+        report->summary.critical_issues);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    <div class=\"stat-box warning\"><div class=\"stat-value\">%d</div><div class=\"stat-label\">Warnings</div></div>\n",
+        report->summary.warning_issues);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  </div>\n");
+    
+    /* Files */
+    for (int f = 0; f < report->num_files; f++) {
+        FileReport* fr = report->files[f];
+        char escaped_path[CIOPT_MAX_PATH_LEN];
+        escape_html(fr->file_path, escaped_path, sizeof(escaped_path));
+        
+        offset += snprintf(buf + offset, buf_size - offset,
+            "  <h2>File: %s</h2>\n", escaped_path);
+        offset += snprintf(buf + offset, buf_size - offset,
+            "  <table>\n");
+        offset += snprintf(buf + offset, buf_size - offset,
+            "    <tr><th>Metric</th><th>Value</th></tr>\n");
+        offset += snprintf(buf + offset, buf_size - offset,
+            "    <tr><td>Total Lines</td><td>%d</td></tr>\n", fr->total_lines);
+        offset += snprintf(buf + offset, buf_size - offset,
+            "    <tr><td>Code Lines</td><td>%d</td></tr>\n", fr->code_lines);
+        offset += snprintf(buf + offset, buf_size - offset,
+            "    <tr><td>Functions</td><td>%d</td></tr>\n", fr->num_functions);
+        offset += snprintf(buf + offset, buf_size - offset,
+            "    <tr><td>Maintainability</td><td>%.1f/100</td></tr>\n", fr->maintainability_index);
+        offset += snprintf(buf + offset, buf_size - offset,
+            "  </table>\n");
+        
+        /* Functions table */
+        if (fr->num_functions > 0) {
+            offset += snprintf(buf + offset, buf_size - offset,
+                "  <h3>Functions</h3>\n");
+            offset += snprintf(buf + offset, buf_size - offset,
+                "  <table>\n");
+            offset += snprintf(buf + offset, buf_size - offset,
+                "    <tr><th>Name</th><th>Lines</th><th>Complexity</th><th>Issues</th></tr>\n");
+            
+            for (int i = 0; i < fr->num_functions; i++) {
+                FunctionReport* fn = fr->functions[i];
+                char escaped_name[CIOPT_MAX_NAME_LEN];
+                escape_html(fn->function_name, escaped_name, sizeof(escaped_name));
+                
+                const char* css_class = "";
+                if (fn->complexity) {
+                    switch (fn->complexity->estimated_complexity) {
+                        case O_1: css_class = "complexity-O_1"; break;
+                        case O_N: css_class = "complexity-O_N"; break;
+                        case O_N_LOG_N: css_class = "complexity-O_N_LOG_N"; break;
+                        case O_N_SQUARED: case O_N_CUBED: css_class = "complexity-O_N_SQUARED"; break;
+                        case O_2_N: case O_N_FACTORIAL: css_class = "complexity-O_2_N"; break;
+                        default: break;
+                    }
+                }
+                
+                int issues = 0;
+                if (fn->patterns) issues += fn->patterns->num_patterns;
+                if (fn->dead_code) issues += fn->dead_code->num_items;
+                
+                offset += snprintf(buf + offset, buf_size - offset,
+                    "    <tr><td>%s</td><td>%d-%d</td><td class=\"%s\">%s</td><td>%d</td></tr>\n",
+                    escaped_name, fn->lineno, fn->end_lineno, css_class,
+                    fn->complexity ? complexity_to_string(fn->complexity->estimated_complexity) : "N/A",
+                    issues);
+            }
+            
+            offset += snprintf(buf + offset, buf_size - offset,
+                "  </table>\n");
+        }
+    }
+    
+    /* Footer */
+    offset += snprintf(buf + offset, buf_size - offset,
+        "</div>\n</body>\n</html>\n");
+    
+    return buf;
+}
+
+/* ============================================================================
+ * JSON Report Generation
+ * ============================================================================ */
+
+char* generate_json_report(AnalysisReport* report) {
+    if (!report) return NULL;
+    
+    size_t buf_size = 131072;
+    char* buf = (char*)malloc(buf_size);
+    if (!buf) return NULL;
+    
+    size_t offset = 0;
+    
+    offset += snprintf(buf + offset, buf_size - offset, "{\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  \"version\": \"%s\",\n", report->fiopt_version);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  \"project\": \"%s\",\n", report->project_path);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "  \"timestamp\": %ld,\n", (long)report->analysis_timestamp);
+    
+    /* Summary */
+    offset += snprintf(buf + offset, buf_size - offset, "  \"summary\": {\n");
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    \"total_files\": %d,\n", report->summary.total_files);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    \"total_functions\": %d,\n", report->summary.total_functions);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    \"total_lines\": %d,\n", report->summary.total_lines);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    \"total_code_lines\": %d,\n", report->summary.total_code_lines);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    \"avg_function_length\": %.2f,\n", report->summary.avg_function_length);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    \"avg_complexity\": %.2f,\n", report->summary.avg_complexity);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    \"max_complexity\": %d,\n", report->summary.max_complexity);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    \"critical_issues\": %d,\n", report->summary.critical_issues);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    \"warning_issues\": %d,\n", report->summary.warning_issues);
+    offset += snprintf(buf + offset, buf_size - offset,
+        "    \"info_issues\": %d\n", report->summary.info_issues);
+    offset += snprintf(buf + offset, buf_size - offset, "  },\n");
+    
+    /* Files */
+    offset += snprintf(buf + offset, buf_size - offset, "  \"files\": [\n");
+    
+    for (int f = 0; f < report->num_files; f++) {
+        FileReport* fr = report->files[f];
+        
+        if (f > 0) offset += snprintf(buf + offset, buf_size - offset, ",\n");
+        offset += snprintf(buf + offset, buf_size - offset, "    {\n");
+        offset += snprintf(buf + offset, buf_size - offset,
+            "      \"path\": \"%s\",\n", fr->file_path);
+        offset += snprintf(buf + offset, buf_size - offset,
+            "      \"total_lines\": %d,\n", fr->total_lines);
+        offset += snprintf(buf + offset, buf_size - offset,
+            "      \"code_lines\": %d,\n", fr->code_lines);
+        offset += snprintf(buf + offset, buf_size - offset,
+            "      \"functions\": %d,\n", fr->num_functions);
+        offset += snprintf(buf + offset, buf_size - offset,
+            "      \"maintainability_index\": %.2f,\n", fr->maintainability_index);
+        
+        /* Functions in this file */
+        offset += snprintf(buf + offset, buf_size - offset, "      \"function_details\": [\n");
+        
+        for (int i = 0; i < fr->num_functions; i++) {
+            FunctionReport* fn = fr->functions[i];
+            
+            if (i > 0) offset += snprintf(buf + offset, buf_size - offset, ",\n");
+            offset += snprintf(buf + offset, buf_size - offset, "        {\n");
+            offset += snprintf(buf + offset, buf_size - offset,
+                "          \"name\": \"%s\",\n", fn->function_name);
+            offset += snprintf(buf + offset, buf_size - offset,
+                "          \"lineno\": %d,\n", fn->lineno);
+            offset += snprintf(buf + offset, buf_size - offset,
+                "          \"end_lineno\": %d,\n", fn->end_lineno);
+            
+            if (fn->complexity) {
+                offset += snprintf(buf + offset, buf_size - offset,
+                    "          \"complexity\": \"%s\",\n",
+                    complexity_to_string(fn->complexity->estimated_complexity));
+                offset += snprintf(buf + offset, buf_size - offset,
+                    "          \"confidence\": %.2f,\n", fn->complexity->confidence);
+            }
+            
+            offset += snprintf(buf + offset, buf_size - offset,
+                "          \"has_loops\": %s,\n",
+                (fn->loops && fn->loops->num_loops > 0) ? "true" : "false");
+            offset += snprintf(buf + offset, buf_size - offset,
+                "          \"is_recursive\": %s\n",
+                (fn->recursion && fn->recursion->is_recursive) ? "true" : "false");
+            
+            offset += snprintf(buf + offset, buf_size - offset, "        }");
+        }
+        
+        offset += snprintf(buf + offset, buf_size - offset, "\n      ]\n");
+        offset += snprintf(buf + offset, buf_size - offset, "    }");
+    }
+    
+    offset += snprintf(buf + offset, buf_size - offset, "\n  ]\n");
+    offset += snprintf(buf + offset, buf_size - offset, "}\n");
+    
+    return buf;
+}
+
+/* ============================================================================
+ * Utility Functions
+ * ============================================================================ */
+
+int write_report_to_file(const char* content, const char* path) {
+    if (!content || !path) return -1;
+    
+    FILE* f = fopen(path, "w");
+    if (!f) return -1;
+    
+    size_t written = fwrite(content, 1, strlen(content), f);
+    fclose(f);
+    
+    return (written == strlen(content)) ? 0 : -1;
+}
+
+void print_summary(AnalysisReport* report) {
+    if (!report) return;
+    
+    printf("\n=== CiOpt Analysis Summary ===\n");
+    printf("Files: %d | Functions: %d | Lines: %d\n",
+           report->summary.total_files,
+           report->summary.total_functions,
+           report->summary.total_lines);
+    printf("Issues: %d critical, %d warnings, %d info\n",
+           report->summary.critical_issues,
+           report->summary.warning_issues,
+           report->summary.info_issues);
+    printf("==============================\n");
 }

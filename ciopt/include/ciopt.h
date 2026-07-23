@@ -2,7 +2,7 @@
  * ciopt — C Implementation of FiOpt
  * AI-Powered Code Complexity & Optimization Engine for C
  * 
- * This is a port of the Python fiopt project to C language.
+ * This is a complete port of the Python fiopt project to C language.
  */
 
 #ifndef CIOPT_H
@@ -21,6 +21,14 @@
 #define CIOPT_VERSION_PATCH 0
 #define CIOPT_VERSION "0.1.0"
 
+/* Maximum limits */
+#define CIOPT_MAX_STRING_LEN 4096
+#define CIOPT_MAX_NAME_LEN 256
+#define CIOPT_MAX_PATH_LEN 1024
+#define CIOPT_MAX_FUNCTIONS 10000
+#define CIOPT_MAX_LOOPS 1000
+#define CIOPT_MAX_ISSUES 5000
+
 /* ============================================================================
  * Configuration and Constants
  * ============================================================================ */
@@ -31,6 +39,16 @@ typedef enum {
     SEVERITY_WARNING = 1,
     SEVERITY_CRITICAL = 2
 } Severity;
+
+/* Pattern categories for anti-patterns */
+typedef enum {
+    PATTERN_DATA_STRUCTURE = 0,
+    PATTERN_STRING_OPERATION = 1,
+    PATTERN_ALGORITHM = 2,
+    PATTERN_IO_OPERATION = 3,
+    PATTERN_MEMORY = 4,
+    PATTERN_COMPUTATION = 5
+} PatternCategory;
 
 /* Supported output formats */
 typedef enum {
@@ -52,6 +70,65 @@ typedef enum {
     O_N_FACTORIAL = 8,
     O_UNKNOWN = 9
 } ComplexityClass;
+
+/* Loop types */
+typedef enum {
+    LOOP_FOR = 0,
+    LOOP_WHILE = 1,
+    LOOP_LIST_COMP = 2,
+    LOOP_SET_COMP = 3,
+    LOOP_DICT_COMP = 4,
+    LOOP_GEN_EXPR = 5
+} LoopType;
+
+/* Block types for CFG */
+typedef enum {
+    BLOCK_ENTRY = 0,
+    BLOCK_EXIT = 1,
+    BLOCK_NORMAL = 2,
+    BLOCK_LOOP_HEADER = 3,
+    BLOCK_LOOP_BODY = 4,
+    BLOCK_LOOP_EXIT = 5,
+    BLOCK_BRANCH_TRUE = 6,
+    BLOCK_BRANCH_FALSE = 7,
+    BLOCK_EXCEPT_HANDLER = 8,
+    BLOCK_FINALLY_BLOCK = 9
+} BlockType;
+
+/* IR Opcodes */
+typedef enum {
+    IR_ASSIGN = 0,
+    IR_LOAD = 1,
+    IR_STORE = 2,
+    IR_CALL = 3,
+    IR_RETURN = 4,
+    IR_JUMP = 5,
+    IR_BRANCH = 6,
+    IR_LOOP_HEADER = 7,
+    IR_LOOP_END = 8,
+    IR_LOOP_CONTINUE = 9,
+    IR_LOOP_BREAK = 10,
+    IR_TRY_ENTER = 11,
+    IR_TRY_EXIT = 12,
+    IR_EXCEPT = 13,
+    IR_FINALLY = 14,
+    IR_WITH_ENTER = 15,
+    IR_WITH_EXIT = 16,
+    IR_YIELD = 17,
+    IR_AWAIT = 18,
+    IR_RAISE = 19,
+    IR_ASSERT = 20,
+    IR_PASS = 21,
+    IR_NOP = 22
+} IROpcode;
+
+/* Dead code kinds */
+typedef enum {
+    DEAD_UNREACHABLE = 0,
+    DEAD_UNUSED_VARIABLE = 1,
+    DEAD_UNUSED_IMPORT = 2,
+    DEAD_UNUSED_FUNCTION = 3
+} DeadCodeKind;
 
 /* Get numeric rank for complexity comparison (higher = worse) */
 int complexity_rank(ComplexityClass c);
@@ -94,73 +171,25 @@ AnalysisConfig* config_create_default(void);
 void config_free(AnalysisConfig* config);
 
 /* ============================================================================
- * Intermediate Representation (IR)
+ * Intermediate Representation (IR) Nodes
  * ============================================================================ */
-
-/* Opcodes for IR instructions */
-typedef enum {
-    IR_ASSIGN = 0,         /* variable = expression */
-    IR_LOAD = 1,           /* load variable */
-    IR_STORE = 2,          /* store to variable */
-    IR_CALL = 3,           /* function call */
-    IR_RETURN = 4,         /* return from function */
-    IR_JUMP = 5,           /* unconditional jump */
-    IR_BRANCH = 6,         /* conditional branch (if/elif) */
-    IR_LOOP_HEADER = 7,    /* loop entry point (for/while) */
-    IR_LOOP_END = 8,       /* loop exit point */
-    IR_LOOP_CONTINUE = 9,  /* continue statement */
-    IR_LOOP_BREAK = 10,    /* break statement */
-    IR_TRY_ENTER = 11,
-    IR_TRY_EXIT = 12,
-    IR_EXCEPT = 13,
-    IR_FINALLY = 14,
-    IR_WITH_ENTER = 15,
-    IR_WITH_EXIT = 16,
-    IR_YIELD = 17,
-    IR_AWAIT = 18,
-    IR_RAISE = 19,
-    IR_ASSERT = 20,
-    IR_PASS = 21,
-    IR_NOP = 22            /* no-operation (placeholder) */
-} IROpcode;
-
-/* Type of loop construct */
-typedef enum {
-    LOOP_FOR = 0,
-    LOOP_WHILE = 1,
-    LOOP_LISTCOMP = 2,
-    LOOP_SETCOMP = 3,
-    LOOP_DICTCOMP = 4,
-    LOOP_GENEXPR = 5
-} LoopType;
 
 /* A single instruction in the IR */
 typedef struct IRNode {
     IROpcode opcode;
     int lineno;
-    
-    /* Variables read by this instruction */
-    char** reads;
+    char** reads;           /* Variables read by this instruction */
     int num_reads;
-    
-    /* Variables written by this instruction */
-    char** writes;
+    char** writes;          /* Variables written by this instruction */
     int num_writes;
-    
-    /* Additional metadata */
-    char* label;
-    char* target;
-    
-    /* For calls */
-    char* call_target;
-    int call_args;
-    
-    /* For loops */
-    LoopType loop_type;
-    char* loop_var;
-    char* loop_iterable;
-    
-    struct IRNode* next;
+    char* label;            /* Human-readable label */
+    char* target;           /* Jump/branch target label */
+    char* call_target;      /* Function being called */
+    int call_args;          /* Number of arguments */
+    LoopType loop_type;     /* For loops */
+    char* loop_var;         /* Iteration variable */
+    char* loop_iterable;    /* What is being iterated over */
+    struct IRNode* next;    /* Next instruction in block */
 } IRNode;
 
 /* Create a new IR node */
@@ -170,48 +199,28 @@ IRNode* ir_node_create(IROpcode opcode, int lineno);
 void ir_node_free(IRNode* node);
 
 /* ============================================================================
- * Basic Block
+ * Basic Blocks for CFG
  * ============================================================================ */
 
-/* Classification of a basic block */
-typedef enum {
-    BLOCK_ENTRY = 0,
-    BLOCK_EXIT = 1,
-    BLOCK_NORMAL = 2,
-    BLOCK_LOOP_HEADER = 3,
-    BLOCK_LOOP_BODY = 4,
-    BLOCK_LOOP_EXIT = 5,
-    BLOCK_BRANCH_TRUE = 6,
-    BLOCK_BRANCH_FALSE = 7,
-    BLOCK_EXCEPT_HANDLER = 8,
-    BLOCK_FINALLY_BLOCK = 9
-} BlockType;
+/* Forward declaration */
+struct BasicBlock;
 
-/* A basic block — a sequence of instructions with no internal branches */
+/* A basic block — sequence of instructions with no internal branches */
 typedef struct BasicBlock {
     int id;
     char* label;
     BlockType block_type;
-    
-    /* Instructions in this block */
-    IRNode** instructions;
+    IRNode* instructions;       /* Linked list of instructions */
     int num_instructions;
-    
-    /* Control flow edges */
-    int* successors;
+    int* successors;            /* Block IDs */
     int num_successors;
-    int* predecessors;
+    int* predecessors;          /* Block IDs */
     int num_predecessors;
-    
-    /* Loop information */
-    int loop_depth;
-    int loop_header_id;
-    
-    /* Source line range */
-    int start_line;
+    int loop_depth;             /* Nesting depth */
+    int loop_header_id;         /* ID of loop header this block belongs to */
+    int start_line;             /* Source line range */
     int end_line;
-    
-    struct BasicBlock* next;
+    struct BasicBlock* next;    /* Next block in linked list */
 } BasicBlock;
 
 /* Create a new basic block */
@@ -220,23 +229,20 @@ BasicBlock* basic_block_create(int id, const char* label, BlockType block_type);
 /* Free a basic block */
 void basic_block_free(BasicBlock* block);
 
-/* Add an instruction to a basic block */
+/* Add instruction to block */
 void basic_block_add_instruction(BasicBlock* block, IRNode* node);
 
-/* Add a successor edge */
-void basic_block_add_successor(BasicBlock* block, int successor_id);
+/* Add successor edge */
+void basic_block_add_successor(BasicBlock* block, int succ_id);
 
-/* Add a predecessor edge */
-void basic_block_add_predecessor(BasicBlock* block, int predecessor_id);
-
-/* Check if block contains any function calls */
-bool basic_block_has_call(BasicBlock* block);
+/* Add predecessor edge */
+void basic_block_add_predecessor(BasicBlock* block, int pred_id);
 
 /* ============================================================================
- * Control Flow Graph
+ * Control Flow Graph (CFG)
  * ============================================================================ */
 
-/* Tracks information about a loop during CFG construction */
+/* Loop information for CFG */
 typedef struct {
     int header_block_id;
     int exit_block_id;
@@ -245,17 +251,17 @@ typedef struct {
     char* loop_var;
     char* iterable_name;
     int depth;
-} LoopInfo;
+} CFGLoopInfo;
 
 /* Control Flow Graph for a function or module */
 typedef struct {
-    char* name;
-    BasicBlock** blocks;
-    int num_blocks;
+    char* name;                 /* Function name or "<module>" */
+    BasicBlock* blocks;         /* Linked list of blocks */
+    int block_count;
     int entry_block_id;
     int* exit_block_ids;
     int num_exit_blocks;
-    LoopInfo* loops;
+    CFGLoopInfo* loops;
     int num_loops;
 } CFG;
 
@@ -265,100 +271,22 @@ CFG* cfg_create(const char* name);
 /* Free a CFG */
 void cfg_free(CFG* cfg);
 
-/* Get entry block */
-BasicBlock* cfg_entry_block(CFG* cfg);
-
-/* Get maximum loop depth */
-int cfg_max_loop_depth(CFG* cfg);
-
-/* Export CFG to DOT format for visualization */
+/* Export CFG to DOT format */
 char* cfg_to_dot(CFG* cfg);
 
-/* ============================================================================
- * Function Information
- * ============================================================================ */
-
+/* Get back edges (indicates loops) */
 typedef struct {
-    char* name;
-    int lineno;
-    int end_lineno;
-    int col_offset;
-    char** args;
-    int num_args;
-    char** decorators;
-    int num_decorators;
-    char* docstring;
-    bool is_method;
-    bool is_async;
-    bool is_generator;
-    bool is_property;
-    int body_line_count;
-    char** nested_functions;
-    int num_nested_functions;
-} FunctionInfo;
+    int from_block;
+    int to_block;
+} BackEdge;
 
-/* Create function info */
-FunctionInfo* function_info_create(void);
-
-/* Free function info */
-void function_info_free(FunctionInfo* info);
+BackEdge* cfg_get_back_edges(CFG* cfg, int* num_edges);
 
 /* ============================================================================
- * Parsed Module
+ * Loop Detection and Analysis
  * ============================================================================ */
 
-typedef struct {
-    char* source;
-    size_t source_len;
-    FunctionInfo** functions;
-    int num_functions;
-    int top_level_statements;
-    int num_imports;
-    char** global_variables;
-    int num_global_variables;
-} ParsedModule;
-
-/* Create parsed module */
-ParsedModule* parsed_module_create(void);
-
-/* Free parsed module */
-void parsed_module_free(ParsedModule* module);
-
-/* ============================================================================
- * Source File
- * ============================================================================ */
-
-typedef struct {
-    char* path;
-    char* content;
-    int line_count;
-    char* encoding;
-} SourceFile;
-
-/* Load a source file */
-SourceFile* source_file_load(const char* path);
-
-/* Free source file */
-void source_file_free(SourceFile* file);
-
-/* Get a specific line (1-indexed) */
-char* source_file_get_line(SourceFile* file, int lineno);
-
-/* ============================================================================
- * Loop Analysis
- * ============================================================================ */
-
-/* Kind of loop */
-typedef enum {
-    LOOP_KIND_FOR = 0,
-    LOOP_KIND_WHILE = 1,
-    LOOP_KIND_LIST_COMP = 2,
-    LOOP_KIND_SET_COMP = 3,
-    LOOP_KIND_DICT_COMP = 4,
-    LOOP_KIND_GEN_EXPR = 5
-} LoopKind;
-
-/* Information about a loop variable */
+/* Loop variable information */
 typedef struct {
     char* name;
     int lineno;
@@ -366,12 +294,15 @@ typedef struct {
 } LoopVariable;
 
 /* Detailed information about a single loop */
-typedef struct {
-    LoopKind kind;
+typedef struct LoopDetail {
+    LoopType kind;
     int lineno;
     int end_lineno;
     int col_offset;
-    int depth;              /* 1 = top-level, 2 = nested, etc. */
+    int depth;                  /* 1 = top-level, 2 = nested once, etc. */
+    struct LoopDetail* parent;
+    struct LoopDetail** children;
+    int num_children;
     LoopVariable* variables;
     int num_variables;
     int body_line_count;
@@ -391,134 +322,61 @@ typedef struct {
 /* Complete loop analysis results for a function */
 typedef struct {
     char* function_name;
-    LoopDetail* loops;
+    LoopDetail** loops;
     int num_loops;
 } LoopAnalysis;
 
-/* Get maximum loop nesting depth */
-int loop_analysis_max_depth(LoopAnalysis* analysis);
-
-/* Get total number of loops */
-int loop_analysis_total_loops(LoopAnalysis* analysis);
+/* Create loop analysis */
+LoopAnalysis* loop_analysis_create(const char* func_name);
 
 /* Free loop analysis */
 void loop_analysis_free(LoopAnalysis* analysis);
 
+/* Detect loops in source code */
+LoopAnalysis* detect_loops(const char* source_code, const char* func_name);
+
 /* ============================================================================
- * Recursion Analysis
+ * Recursion Detection and Analysis
  * ============================================================================ */
 
+/* Information about recursion in a function */
 typedef struct {
     char* function_name;
     int lineno;
     int end_lineno;
     bool is_recursive;
-    int* direct_calls;      /* line numbers of recursive calls */
+    int* direct_calls;          /* Line numbers of recursive calls */
     int num_direct_calls;
+    char** mutual_call_funcs;   /* Functions involved in mutual recursion */
+    int* mutual_call_lines;
+    int num_mutual_calls;
     bool has_base_case;
     int* base_case_lines;
-    int num_base_case_lines;
-    int estimated_branches;
+    int num_base_cases;
+    int estimated_branches;     /* How many recursive calls per invocation */
     bool is_tail_recursive;
     int* tail_recursive_lines;
-    int num_tail_recursive_lines;
+    int num_tail_recursive;
     bool can_be_memoized;
     char* memoization_reason;
     bool has_overlapping_subproblems;
-    char* depth_pattern;
+    char* depth_pattern;        /* "linear", "logarithmic", "exponential" */
 } RecursionInfo;
+
+/* Create recursion info */
+RecursionInfo* recursion_info_create(const char* func_name);
 
 /* Free recursion info */
 void recursion_info_free(RecursionInfo* info);
 
-/* ============================================================================
- * Complexity Analysis
- * ============================================================================ */
-
-typedef struct {
-    char* source;
-    ComplexityClass complexity;
-    int lineno;
-    char* description;
-    char* detail;
-} ComplexityExplanation;
-
-typedef struct {
-    char* function_name;
-    int lineno;
-    int end_lineno;
-    ComplexityClass estimated_complexity;
-    float confidence;       /* 0.0 to 1.0 */
-    ComplexityExplanation* explanations;
-    int num_explanations;
-    LoopAnalysis* loop_analysis;
-    RecursionInfo* recursion_info;
-    int* bottleneck_lines;
-    int num_bottleneck_lines;
-    char* bottleneck_description;
-    char** warnings;
-    int num_warnings;
-} ComplexityResult;
-
-/* Check if complexity is efficient (<= O(n log n)) */
-bool complexity_is_efficient(ComplexityResult* result);
-
-/* Get summary string */
-char* complexity_summary(ComplexityResult* result);
-
-/* Free complexity result */
-void complexity_result_free(ComplexityResult* result);
-
-/* ============================================================================
- * Anti-Pattern Detection
- * ============================================================================ */
-
-typedef enum {
-    PATTERN_SEVERITY_INFO = 0,
-    PATTERN_SEVERITY_WARNING = 1,
-    PATTERN_SEVERITY_CRITICAL = 2
-} PatternSeverity;
-
-typedef enum {
-    CATEGORY_DATA_STRUCTURE = 0,
-    CATEGORY_STRING_OPERATION = 1,
-    CATEGORY_ALGORITHM = 2,
-    CATEGORY_IO_OPERATION = 3,
-    CATEGORY_MEMORY = 4,
-    CATEGORY_COMPUTATION = 5
-} PatternCategory;
-
-typedef struct {
-    char* name;
-    PatternCategory category;
-    PatternSeverity severity;
-    int lineno;
-    int end_lineno;
-    char* description;
-    char* suggestion;
-    char* estimated_impact;
-    char* code_snippet;
-} AntiPattern;
-
-typedef struct {
-    char* function_name;
-    AntiPattern* anti_patterns;
-    int num_anti_patterns;
-} PatternAnalysis;
-
-/* Get count of critical patterns */
-int pattern_analysis_critical_count(PatternAnalysis* analysis);
-
-/* Get count of warning patterns */
-int pattern_analysis_warning_count(PatternAnalysis* analysis);
-
-/* Free pattern analysis */
-void pattern_analysis_free(PatternAnalysis* analysis);
+/* Detect recursion in source code */
+RecursionInfo* detect_recursion(const char* source_code, const char* func_name);
 
 /* ============================================================================
  * Data Structure Analysis
  * ============================================================================ */
 
+/* A detected data structure misuse */
 typedef struct {
     char* variable_name;
     char* current_type;
@@ -529,21 +387,29 @@ typedef struct {
     char* estimated_impact;
 } DataStructureIssue;
 
+/* Data structure analysis results for a function */
 typedef struct {
     char* function_name;
-    DataStructureIssue* issues;
+    DataStructureIssue** issues;
     int num_issues;
 } DataStructureAnalysis;
+
+/* Create data structure analysis */
+DataStructureAnalysis* data_structure_analysis_create(const char* func_name);
 
 /* Free data structure analysis */
 void data_structure_analysis_free(DataStructureAnalysis* analysis);
 
+/* Detect data structure issues */
+DataStructureAnalysis* detect_data_structure_issues(const char* source_code, const char* func_name);
+
 /* ============================================================================
- * Dead Code Analysis
+ * Dead Code Detection
  * ============================================================================ */
 
+/* A piece of detected dead code */
 typedef struct {
-    char* kind;             /* "unreachable", "unused_variable", etc. */
+    DeadCodeKind kind;
     int lineno;
     int end_lineno;
     char* name;
@@ -551,186 +417,251 @@ typedef struct {
     char* suggestion;
 } DeadCodeItem;
 
+/* Dead code analysis results */
 typedef struct {
-    DeadCodeItem* items;
+    DeadCodeItem** items;
     int num_items;
 } DeadCodeAnalysis;
 
-/* Get total count */
-int dead_code_total(DeadCodeAnalysis* analysis);
-
-/* Get unreachable code count */
-int dead_code_unreachable_count(DeadCodeAnalysis* analysis);
+/* Create dead code analysis */
+DeadCodeAnalysis* dead_code_analysis_create(void);
 
 /* Free dead code analysis */
 void dead_code_analysis_free(DeadCodeAnalysis* analysis);
 
+/* Detect dead code */
+DeadCodeAnalysis* detect_dead_code(const char* source_code);
+
 /* ============================================================================
- * Function Report
+ * Anti-Pattern Detection
  * ============================================================================ */
 
+/* A detected anti-pattern */
 typedef struct {
     char* name;
+    PatternCategory category;
+    Severity severity;
+    int lineno;
+    int end_lineno;
+    char* description;
+    char* suggestion;
+    char* estimated_impact;
+    char* code_snippet;
+} AntiPattern;
+
+/* Results of anti-pattern detection for a function */
+typedef struct {
+    char* function_name;
+    AntiPattern** anti_patterns;
+    int num_patterns;
+} PatternAnalysis;
+
+/* Create pattern analysis */
+PatternAnalysis* pattern_analysis_create(const char* func_name);
+
+/* Free pattern analysis */
+void pattern_analysis_free(PatternAnalysis* analysis);
+
+/* Detect anti-patterns */
+PatternAnalysis* detect_patterns(const char* source_code, const char* func_name);
+
+/* ============================================================================
+ * Complexity Estimation
+ * ============================================================================ */
+
+/* Explanation for a complexity component */
+typedef struct {
+    char* source;               /* "loop", "recursion", "call", etc. */
+    ComplexityClass complexity;
+    int lineno;
+    char* description;
+    char* detail;
+} ComplexityExplanation;
+
+/* Result of complexity estimation for a single function */
+typedef struct {
+    char* function_name;
+    int lineno;
+    int end_lineno;
+    ComplexityClass estimated_complexity;
+    float confidence;           /* 0.0 (guess) to 1.0 (certain) */
+    ComplexityExplanation** explanations;
+    int num_explanations;
+    LoopAnalysis* loop_analysis;
+    RecursionInfo* recursion_info;
+    int* bottleneck_lines;
+    int num_bottleneck_lines;
+    char* bottleneck_description;
+    char** warnings;
+    int num_warnings;
+} ComplexityResult;
+
+/* Create complexity result */
+ComplexityResult* complexity_result_create(const char* func_name);
+
+/* Free complexity result */
+void complexity_result_free(ComplexityResult* result);
+
+/* Estimate complexity */
+ComplexityResult* estimate_complexity(const char* source_code, const char* func_name);
+
+/* ============================================================================
+ * Function Analysis Report
+ * ============================================================================ */
+
+/* Comprehensive analysis report for a single function */
+typedef struct {
+    char* function_name;
+    char* file_path;
     int lineno;
     int end_lineno;
     int line_count;
     ComplexityResult* complexity;
+    LoopAnalysis* loops;
+    RecursionInfo* recursion;
+    DataStructureAnalysis* data_structures;
+    DeadCodeAnalysis* dead_code;
     PatternAnalysis* patterns;
-    DataStructureAnalysis* data_structure;
-    Severity severity;
+    CFG* cfg;
 } FunctionReport;
 
-/* Get total issues count */
-int function_report_total_issues(FunctionReport* report);
-
-/* Get summary line */
-char* function_report_summary(FunctionReport* report);
+/* Create function report */
+FunctionReport* function_report_create(const char* func_name, const char* file_path);
 
 /* Free function report */
 void function_report_free(FunctionReport* report);
 
 /* ============================================================================
- * File Report
+ * File Analysis Report
  * ============================================================================ */
 
+/* Analysis report for a single file */
 typedef struct {
-    char* filepath;
-    int line_count;
-    FunctionReport** function_reports;
-    int num_function_reports;
-    DeadCodeAnalysis* dead_code;
-    char** parse_errors;
-    int num_parse_errors;
+    char* file_path;
+    size_t file_size;
+    int total_lines;
+    int code_lines;
+    int comment_lines;
+    int blank_lines;
+    FunctionReport** functions;
+    int num_functions;
+    int import_count;
+    char** imports;
+    char** classes;
+    int num_classes;
+    double maintainability_index;
 } FileReport;
 
-/* Get worst complexity in file */
-ComplexityClass file_report_worst_complexity(FileReport* report);
-
-/* Get total functions */
-int file_report_total_functions(FileReport* report);
-
-/* Get total issues */
-int file_report_total_issues(FileReport* report);
-
-/* Get critical functions */
-FunctionReport** file_report_critical_functions(FileReport* report, int* count);
+/* Create file report */
+FileReport* file_report_create(const char* file_path);
 
 /* Free file report */
 void file_report_free(FileReport* report);
 
 /* ============================================================================
- * Analysis Report
+ * Project Analysis Report
  * ============================================================================ */
 
+/* Summary statistics for entire project */
 typedef struct {
+    int total_files;
+    int total_functions;
+    int total_lines;
+    int total_code_lines;
+    double avg_function_length;
+    double avg_complexity;
+    int max_complexity;
+    int critical_issues;
+    int warning_issues;
+    int info_issues;
+    char* most_complex_function;
+    char* largest_file;
+} AnalysisSummary;
+
+/* Complete analysis report for a project */
+typedef struct {
+    char* project_path;
+    time_t analysis_timestamp;
+    char* fiopt_version;
+    AnalysisConfig* config;
     FileReport** files;
     int num_files;
-    char* timestamp;
-    double analysis_duration_ms;
-    char* fiopt_version;
+    AnalysisSummary summary;
+    char** errors;
+    int num_errors;
+    char** suggestions;
+    int num_suggestions;
 } AnalysisReport;
 
-/* Get total files */
-int analysis_report_total_files(AnalysisReport* report);
-
-/* Get total functions */
-int analysis_report_total_functions(AnalysisReport* report);
-
-/* Get total lines */
-int analysis_report_total_lines(AnalysisReport* report);
-
-/* Get total issues */
-int analysis_report_total_issues(AnalysisReport* report);
-
-/* Get worst complexity */
-ComplexityClass analysis_report_worst_complexity(AnalysisReport* report);
-
-/* Get complexity string */
-const char* analysis_report_complexity(AnalysisReport* report);
-
-/* Get bottlenecks */
-char** analysis_report_bottlenecks(AnalysisReport* report, int* count);
-
-/* Get suggestions */
-char** analysis_report_suggestions(AnalysisReport* report, int* count);
-
-/* Get human-readable summary */
-char* analysis_report_summary(AnalysisReport* report);
+/* Create analysis report */
+AnalysisReport* analysis_report_create(const char* project_path);
 
 /* Free analysis report */
 void analysis_report_free(AnalysisReport* report);
 
 /* ============================================================================
- * Parser Functions
+ * Source Loading and Parsing
  * ============================================================================ */
 
-/* Parse Python source code into a ParsedModule */
-ParsedModule* parse_source(const char* source, const char* filename);
+/* Load source code from file */
+char* load_source_file(const char* path);
 
-/* Load a Python file */
-SourceFile* load_file(const char* path);
+/* Scan directory for source files */
+typedef struct {
+    char** paths;
+    int num_paths;
+} FileList;
 
-/* Scan a directory for Python files */
-SourceFile** scan_project(const char* directory, int* count);
+FileList* scan_directory(const char* dir_path, const char** extensions, int num_extensions);
+
+/* Free file list */
+void file_list_free(FileList* list);
 
 /* ============================================================================
- * Analyzer Functions
+ * Main Analysis Engine
  * ============================================================================ */
 
-/* Detect and analyze loops in a function */
-LoopAnalysis* detect_loops(const char* source, const char* func_name);
+/* Analyze a single source file */
+FileReport* analyze_file(const char* file_path, AnalysisConfig* config);
 
-/* Detect recursion patterns */
-RecursionInfo* detect_recursion(const char* source, const char* func_name);
-
-/* Estimate complexity of a function */
-ComplexityResult* estimate_complexity(const char* source, const char* func_name);
-
-/* Detect anti-patterns */
-PatternAnalysis* detect_patterns(const char* source, const char* func_name);
-
-/* Detect data structure issues */
-DataStructureAnalysis* detect_data_structure_issues(const char* source, const char* func_name);
-
-/* Detect dead code */
-DeadCodeAnalysis* detect_dead_code(const char* source);
+/* Analyze entire project */
+AnalysisReport* analyze_project(const char* project_path, AnalysisConfig* config);
 
 /* ============================================================================
- * Main API
+ * Report Generation
  * ============================================================================ */
 
-/* Analyze a Python file or directory */
-AnalysisReport* analyze(const char* path, AnalysisConfig* config);
+/* Generate terminal report */
+char* generate_terminal_report(AnalysisReport* report);
 
-/* Analyze source code from a string */
-AnalysisReport* analyze_source(const char* source, const char* filename, AnalysisConfig* config);
+/* Generate HTML report */
+char* generate_html_report(AnalysisReport* report);
 
-/* ============================================================================
- * Reporting Functions
- * ============================================================================ */
+/* Generate JSON report */
+char* generate_json_report(AnalysisReport* report);
 
-/* Render report to terminal */
-void render_terminal(AnalysisReport* report, bool verbose);
+/* Write report to file */
+int write_report_to_file(const char* content, const char* path);
 
-/* Save HTML report */
-int save_html_report(AnalysisReport* report, const char* output_path);
-
-/* Render JSON report */
-char* render_json(AnalysisReport* report);
-
-/* Save JSON report */
-int save_json_report(AnalysisReport* report, const char* output_path);
+/* Print summary to terminal */
+void print_summary(AnalysisReport* report);
 
 /* ============================================================================
  * Utility Functions
  * ============================================================================ */
 
-/* Get current timestamp as ISO string */
-char* get_timestamp_iso(void);
-
 /* String utilities */
-char* str_duplicate(const char* s);
-char** str_split(const char* s, char delimiter, int* count);
-void str_array_free(char** arr, int count);
+char* ciopt_strdup(const char* s);
+char** ciopt_split_string(const char* s, char delimiter, int* count);
+void ciopt_free_string_array(char** arr, int count);
+
+/* Get complexity class from string */
+ComplexityClass complexity_from_string(const char* s);
+
+/* Get severity string */
+const char* severity_to_string(Severity s);
+
+/* Get pattern category string */
+const char* pattern_category_to_string(PatternCategory c);
 
 #endif /* CIOPT_H */

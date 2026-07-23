@@ -2,20 +2,21 @@
 # Build artifacts
 *.o
 *.obj
-*.exe
-*.dll
-*.so
-*.a
 *.out
 build/
 dist/
 
 # Dependencies
-node_modules/
 venv/
 .venv/
 __pycache__/
 *.egg-info/
+
+# CMake specific
+CMakeFiles/
+cmake-build-*/
+Makefile
+*.cmake
 
 # Logs and temp files
 *.log
@@ -36,14 +37,7 @@ coverage/
 htmlcov/
 .coverage
 
-# OS specific
+# OS generated files
 .DS_Store
 Thumbs.db
-
-# C/C++ specific
-*.i
-*.s
-*.gcda
-*.gcno
-*.gcov
 ```

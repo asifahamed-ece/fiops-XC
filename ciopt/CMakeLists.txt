@@ -1,49 +1,41 @@
-# CMakeLists.txt for ciopt - C Implementation of FiOpt
-
 cmake_minimum_required(VERSION 3.10)
-project(ciopt VERSION 0.1.0 LANGUAGES C)
+project(ciopt C)
 
-# Set C standard
-set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # Compiler flags
-if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-    add_compile_options(-Wall -Wextra -Wpedantic)
-    add_compile_options(-O2)
-endif()
-
-# Include directories
-include_directories(${CMAKE_SOURCE_DIR}/include)
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -pedantic")
+set(CMAKE_C_FLAGS_DEBUG "-g -O0")
+set(CMAKE_C_FLAGS_RELEASE "-O2")
 
 # Source files
 set(SOURCES
     src/ciopt_core.c
-    src/ciopt_report.c
     src/ciopt_analyzer.c
+    src/ciopt_report.c
+)
+
+# Header files
+set(HEADERS
+    include/ciopt.h
 )
 
 # Create library
-add_library(ciopt STATIC ${SOURCES})
+add_library(ciopt STATIC ${SOURCES} ${HEADERS})
+target_include_directories(ciopt PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-# Create CLI executable
-add_executable(ciopt_cli src/main.c)
+# Main executable (example usage)
+add_executable(ciopt_cli examples/main.c)
 target_link_libraries(ciopt_cli ciopt)
-set_target_properties(ciopt_cli PROPERTIES OUTPUT_NAME "ciopt")
 
 # Install targets
-install(TARGETS ciopt ciopt_cli
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
-    RUNTIME DESTINATION bin
-)
+install(TARGETS ciopt DESTINATION lib)
+install(FILES ${HEADERS} DESTINATION include)
+install(TARGETS ciopt_cli DESTINATION bin)
 
-install(DIRECTORY include/ DESTINATION include)
-
-# Enable testing
+# Testing
 enable_testing()
-
-# Example test program
-add_executable(test_ciopt tests/test_basic.c)
+add_executable(test_ciopt tests/test_ciopt.c)
 target_link_libraries(test_ciopt ciopt)
-add_test(NAME basic_test COMMAND test_ciopt)
+add_test(NAME test_ciopt COMMAND test_ciopt)
