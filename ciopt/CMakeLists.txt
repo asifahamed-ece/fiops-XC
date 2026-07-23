@@ -14,6 +14,7 @@ set(SOURCES
     src/ciopt_core.c
     src/ciopt_analyzer.c
     src/ciopt_report.c
+    src/ciopt_parser.c
 )
 
 # Header files

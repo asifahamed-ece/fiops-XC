@@ -2,42 +2,68 @@
 # Build artifacts
 *.o
 *.obj
+*.a
+*.so
+*.dll
+*.exe
 *.out
+
+# C/C++ specific
+*.i
+*.ii
+*.s
+*.su
+*.gcno
+*.gcda
+*.gcov
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# Generated parser files
+*.tab.c
+*.tab.h
+*.yy.c
+*.output
+
+# Dependencies
 build/
 dist/
 
-# Dependencies
-venv/
-.venv/
-__pycache__/
-*.egg-info/
-
-# CMake specific
-CMakeFiles/
-cmake-build-*/
-Makefile
-*.cmake
-
-# Logs and temp files
+# Logs
 *.log
-*.tmp
-*.swp
 
 # Environment
 .env
 .env.local
-*.env.*
+.env.*
 
 # Editors
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
-# Coverage reports
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
 coverage/
 htmlcov/
 .coverage
 
-# OS generated files
-.DS_Store
-Thumbs.db
+# Python (if mixed project)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.eggs/
 ```
