@@ -617,6 +617,18 @@ FileList* scan_directory(const char* dir_path, const char** extensions, int num_
 /* Free file list */
 void file_list_free(FileList* list);
 
+/* Parse C source file into IR function */
+typedef struct IRFunction {
+    char* name;
+    CFG* cfg;
+    struct IRNodeList* body;
+} IRFunction;
+
+IRFunction* ciopt_parse_file(const char* filename);
+
+/* Analyze a C file with full pipeline (parse + analyze + report) */
+AnalysisReport* ciopt_analyze_c_file(const char* filename, const AnalysisConfig* config);
+
 /* ============================================================================
  * Main Analysis Engine
  * ============================================================================ */
