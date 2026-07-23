@@ -1,40 +1,49 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
+```
+# Build artifacts
+*.o
+*.obj
+*.exe
+*.dll
 *.so
-*.egg-info/
-dist/
+*.a
+*.out
 build/
-*.egg
-.eggs/
+dist/
 
-# Virtual environments
-.venv/
+# Dependencies
+node_modules/
 venv/
-env/
+.venv/
+__pycache__/
+*.egg-info/
 
-# IDE
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
 
-# Testing
-.pytest_cache/
-.coverage
+# Coverage reports
+coverage/
 htmlcov/
-.tox/
+.coverage
 
-# Reports
-*.html
-!fiopt/reporting/templates/*.html
-
-# OS
+# OS specific
 .DS_Store
 Thumbs.db
 
-# Distribution
-*.tar.gz
-*.whl
+# C/C++ specific
+*.i
+*.s
+*.gcda
+*.gcno
+*.gcov
+```
