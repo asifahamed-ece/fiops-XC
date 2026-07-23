@@ -406,16 +406,16 @@ AnalysisReport* ciopt_analyze_c_file(const char* filename, const CiOptConfig* co
     // Run Analyses
     LoopAnalysis* loops = detect_loops(cfg);
     RecursionInfo* recursion = detect_recursion(func);
-    DataStructureIssues* ds_issues = detect_data_structure_issues(func);
-    DeadCodeInfo* dead_code = detect_dead_code(cfg);
-    PatternList* patterns = detect_patterns(func);
+    DataStructureAnalysis* ds_issues = detect_data_structure_issues(func);
+    DeadCodeAnalysis* dead_code = detect_dead_code(cfg);
+    PatternAnalysis* patterns = detect_patterns(func);
     ComplexityResult* complexity = estimate_complexity(cfg, loops, recursion);
 
     // Generate Report
     FunctionReport* frep = function_report_create(func, cfg, complexity, loops, recursion, ds_issues, dead_code, patterns);
-    FileReport* filerep = file_report_create(filename, 1, &frep, 1); // 1 function for now
+    FileReport* filerep = file_report_create(filename, &frep, 1); // 1 function for now
     
-    AnalysisReport* report = analysis_report_create();
+    AnalysisReport* report = analysis_report_create(filename);
     analysis_report_add_file(report, filerep);
     analysis_report_finalize(report, config);
 
@@ -424,14 +424,13 @@ AnalysisReport* ciopt_analyze_c_file(const char* filename, const CiOptConfig* co
     // Here we assume report_create takes ownership or copies necessary data.
     // For safety in this demo, we free the raw analysis structs if report doesn't own them.
     // (Assuming report functions handle memory correctly as per header design)
+    // NOTE: We don't free frep here because file_report_create took ownership
     
     loop_analysis_free(loops);
     recursion_info_free(recursion);
-    data_structure_issues_free(ds_issues);
-    dead_code_info_free(dead_code);
-    pattern_list_free(patterns);
+    /* ds_issues, dead_code, patterns already transferred to frep */
     complexity_result_free(complexity);
-    cfg_free(cfg);
+    /* cfg already transferred to frep */
     ir_function_free(func);
 
     return report;

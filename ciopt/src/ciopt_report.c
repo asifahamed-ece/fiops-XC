@@ -53,22 +53,31 @@ static void escape_html(const char* src, char* dest, size_t dest_size) {
  * Function Report Implementation
  * ============================================================================ */
 
-FunctionReport* function_report_create(const char* func_name, const char* file_path) {
+FunctionReport* function_report_create(
+    IRFunction* func,
+    CFG* cfg,
+    ComplexityResult* complexity,
+    LoopAnalysis* loops,
+    RecursionInfo* recursion,
+    DataStructureAnalysis* ds_issues,
+    DeadCodeAnalysis* dead_code,
+    PatternAnalysis* patterns
+) {
     FunctionReport* report = (FunctionReport*)calloc(1, sizeof(FunctionReport));
     if (!report) return NULL;
     
-    report->function_name = ciopt_strdup(func_name ? func_name : "<unknown>");
-    report->file_path = ciopt_strdup(file_path ? file_path : "");
-    report->lineno = 0;
-    report->end_lineno = 0;
-    report->line_count = 0;
-    report->complexity = NULL;
-    report->loops = NULL;
-    report->recursion = NULL;
-    report->data_structures = NULL;
-    report->dead_code = NULL;
-    report->patterns = NULL;
-    report->cfg = NULL;
+    report->function_name = ciopt_strdup(func && func->name ? func->name : "<unknown>");
+    report->file_path = ciopt_strdup("");
+    report->lineno = func ? func->lineno : 0;
+    report->end_lineno = func ? func->end_lineno : 0;
+    report->line_count = func ? func->line_count : 0;
+    report->complexity = complexity;  /* Takes ownership */
+    report->loops = loops;            /* Takes ownership */
+    report->recursion = recursion;    /* Takes ownership */
+    report->data_structures = ds_issues;  /* Takes ownership */
+    report->dead_code = dead_code;    /* Takes ownership */
+    report->patterns = patterns;      /* Takes ownership */
+    report->cfg = cfg;                /* Takes ownership */
     
     return report;
 }
@@ -91,7 +100,11 @@ void function_report_free(FunctionReport* report) {
  * File Report Implementation
  * ============================================================================ */
 
-FileReport* file_report_create(const char* file_path) {
+FileReport* file_report_create(
+    const char* file_path,
+    FunctionReport** functions,
+    int num_functions
+) {
     FileReport* report = (FileReport*)calloc(1, sizeof(FileReport));
     if (!report) return NULL;
     
@@ -101,8 +114,19 @@ FileReport* file_report_create(const char* file_path) {
     report->code_lines = 0;
     report->comment_lines = 0;
     report->blank_lines = 0;
-    report->functions = NULL;
-    report->num_functions = 0;
+    
+    /* Copy function report pointers */
+    if (functions && num_functions > 0) {
+        report->functions = (FunctionReport**)calloc(num_functions, sizeof(FunctionReport*));
+        if (report->functions) {
+            memcpy(report->functions, functions, num_functions * sizeof(FunctionReport*));
+            report->num_functions = num_functions;
+        }
+    } else {
+        report->functions = NULL;
+        report->num_functions = 0;
+    }
+    
     report->import_count = 0;
     report->imports = NULL;
     report->classes = NULL;
@@ -179,6 +203,117 @@ void analysis_report_free(AnalysisReport* report) {
     ciopt_free_string_array(report->suggestions, report->num_suggestions);
     
     free(report);
+}
+
+/* Add file report to analysis report */
+void analysis_report_add_file(AnalysisReport* report, FileReport* file_report) {
+    if (!report || !file_report) return;
+    
+    /* Resize files array */
+    int new_size = report->num_files + 1;
+    FileReport** new_files = (FileReport**)realloc(report->files, new_size * sizeof(FileReport*));
+    if (!new_files) return;
+    
+    report->files = new_files;
+    report->files[report->num_files] = file_report;
+    report->num_files = new_size;
+}
+
+/* Finalize analysis report (compute summary) */
+void analysis_report_finalize(AnalysisReport* report, AnalysisConfig* config) {
+    if (!report) return;
+    
+    /* Compute summary statistics */
+    report->summary.total_files = report->num_files;
+    report->summary.total_functions = 0;
+    report->summary.total_lines = 0;
+    report->summary.total_code_lines = 0;
+    report->summary.max_complexity = 0;
+    report->summary.critical_issues = 0;
+    report->summary.warning_issues = 0;
+    report->summary.info_issues = 0;
+    
+    double total_complexity = 0.0;
+    int complexity_count = 0;
+    
+    char* most_complex_func = NULL;
+    int max_complexity_rank = -1;
+    char* largest_file = NULL;
+    size_t max_file_size = 0;
+    
+    for (int i = 0; i < report->num_files; i++) {
+        FileReport* filerep = report->files[i];
+        if (!filerep) continue;
+        
+        report->summary.total_lines += filerep->total_lines;
+        report->summary.total_code_lines += filerep->code_lines;
+        
+        if (filerep->file_size > max_file_size) {
+            max_file_size = filerep->file_size;
+            largest_file = filerep->file_path;
+        }
+        
+        for (int j = 0; j < filerep->num_functions; j++) {
+            FunctionReport* funcrep = filerep->functions[j];
+            if (!funcrep) continue;
+            
+            report->summary.total_functions++;
+            
+            if (funcrep->complexity) {
+                int rank = (int)funcrep->complexity->estimated_complexity;
+                total_complexity += rank;
+                complexity_count++;
+                
+                if (rank > max_complexity_rank) {
+                    max_complexity_rank = rank;
+                    most_complex_func = funcrep->function_name;
+                }
+                
+                if (rank > report->summary.max_complexity) {
+                    report->summary.max_complexity = rank;
+                }
+            }
+            
+            /* Count issues by severity */
+            if (funcrep->patterns) {
+                for (int k = 0; k < funcrep->patterns->num_patterns; k++) {
+                    AntiPattern* pattern = funcrep->patterns->anti_patterns[k];
+                    if (pattern && pattern->severity == SEVERITY_CRITICAL) {
+                        report->summary.critical_issues++;
+                    } else if (pattern && pattern->severity == SEVERITY_WARNING) {
+                        report->summary.warning_issues++;
+                    } else {
+                        report->summary.info_issues++;
+                    }
+                }
+            }
+            
+            if (funcrep->data_structures) {
+                report->summary.warning_issues += funcrep->data_structures->num_issues;
+            }
+        }
+    }
+    
+    if (complexity_count > 0) {
+        report->summary.avg_complexity = total_complexity / complexity_count;
+    }
+    
+    if (report->summary.total_functions > 0) {
+        report->summary.avg_function_length = 
+            (double)report->summary.total_code_lines / report->summary.total_functions;
+    }
+    
+    if (most_complex_func) {
+        report->summary.most_complex_function = ciopt_strdup(most_complex_func);
+    }
+    
+    if (largest_file) {
+        report->summary.largest_file = ciopt_strdup(largest_file);
+    }
+    
+    /* Generate suggestions from bottlenecks */
+    /* This is a simplified version - full implementation would extract from all analyses */
+    (void)config;  /* Unused for now */
 }
 
 /* ============================================================================

@@ -1,5 +1,5 @@
 ```
-# Build artifacts
+# Compiled and build artifacts
 *.o
 *.obj
 *.a
@@ -8,62 +8,51 @@
 *.exe
 *.out
 
-# C/C++ specific
-*.i
-*.ii
-*.s
-*.su
-*.gcno
-*.gcda
-*.gcov
-
-# CMake
-CMakeFiles/
-CMakeCache.txt
-cmake_install.cmake
-Makefile
-compile_commands.json
-
-# Generated parser files
-*.tab.c
-*.tab.h
-*.yy.c
-*.output
-
 # Dependencies
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Build directories
 build/
 dist/
+target/
 
-# Logs
+# Logs and temp files
 *.log
+*.tmp
+*.swp
 
 # Environment
 .env
 .env.local
-.env.*
+*.env.*
 
 # Editors
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
 
-# OS
+# Coverage
+.coverage
+coverage/
+htmlcov/
+
+# OS specific
 .DS_Store
 Thumbs.db
 
-# Coverage
-coverage/
-htmlcov/
-.coverage
-
-# Python (if mixed project)
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.egg-info/
-.eggs/
+# Compressed files
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
 ```

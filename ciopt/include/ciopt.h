@@ -525,8 +525,17 @@ typedef struct {
     CFG* cfg;
 } FunctionReport;
 
-/* Create function report */
-FunctionReport* function_report_create(const char* func_name, const char* file_path);
+/* Create function report with all analysis data */
+FunctionReport* function_report_create(
+    IRFunction* func,
+    CFG* cfg,
+    ComplexityResult* complexity,
+    LoopAnalysis* loops,
+    RecursionInfo* recursion,
+    DataStructureAnalysis* ds_issues,
+    DeadCodeAnalysis* dead_code,
+    PatternAnalysis* patterns
+);
 
 /* Free function report */
 void function_report_free(FunctionReport* report);
@@ -552,8 +561,12 @@ typedef struct {
     double maintainability_index;
 } FileReport;
 
-/* Create file report */
-FileReport* file_report_create(const char* file_path);
+/* Create file report with functions */
+FileReport* file_report_create(
+    const char* file_path,
+    FunctionReport** functions,
+    int num_functions
+);
 
 /* Free file report */
 void file_report_free(FileReport* report);
@@ -595,6 +608,12 @@ typedef struct {
 
 /* Create analysis report */
 AnalysisReport* analysis_report_create(const char* project_path);
+
+/* Add file report to analysis report */
+void analysis_report_add_file(AnalysisReport* report, FileReport* file_report);
+
+/* Finalize analysis report (compute summary) */
+void analysis_report_finalize(AnalysisReport* report, AnalysisConfig* config);
 
 /* Free analysis report */
 void analysis_report_free(AnalysisReport* report);
