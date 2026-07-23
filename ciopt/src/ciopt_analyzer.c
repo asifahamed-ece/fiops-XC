@@ -1,468 +1,501 @@
 /**
- * ciopt — C Implementation of FiOpt
- * Analyzer implementations and main analysis functions
+ * ciopt_analyzer.c - Analysis engine for CiOpt
+ * 
+ * This implements the main analysis functions, ported from Python FiOpt.
+ * Note: Full AST parsing in C would require a Python embedding or external parser.
+ * These are stub implementations that demonstrate the structure.
  */
 
 #include "ciopt.h"
 #include <dirent.h>
 #include <sys/stat.h>
-#include <ctype.h>
 
 /* ============================================================================
  * Stub Analysis Functions
- * Note: Full implementation would require a Python AST parser in C,
- * which is beyond the scope of this port. These are placeholder implementations
- * that demonstrate the API structure.
+ * 
+ * In a full implementation, these would parse Python/C source code using
+ * an AST parser (like libpython for Python or clang for C).
+ * For this port, we provide stub implementations that show the structure.
  * ============================================================================ */
 
-ParsedModule* parse_source(const char* source, const char* filename) {
-    /* TODO: Implement Python AST parsing in C using libpython or custom parser */
-    (void)source;
-    (void)filename;
+/* Stub: Load source file */
+char* load_source_file(const char* path) {
+    if (!path) return NULL;
     
-    ParsedModule* module = parsed_module_create();
-    if (!module) return NULL;
+    FILE* f = fopen(path, "r");
+    if (!f) return NULL;
     
-    /* For now, just create a stub module */
-    module->source = str_duplicate(source);
-    module->source_len = source ? strlen(source) : 0;
+    /* Get file size */
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
     
-    return module;
+    if (size <= 0) {
+        fclose(f);
+        return NULL;
+    }
+    
+    char* buffer = (char*)malloc(size + 1);
+    if (!buffer) {
+        fclose(f);
+        return NULL;
+    }
+    
+    size_t read_size = fread(buffer, 1, size, f);
+    buffer[read_size] = '\0';
+    fclose(f);
+    
+    return buffer;
 }
 
-SourceFile** scan_project(const char* directory, int* count) {
-    *count = 0;
-    if (!directory) return NULL;
+/* Stub: Scan directory for source files */
+FileList* scan_directory(const char* dir_path, const char** extensions, int num_extensions) {
+    if (!dir_path) return NULL;
     
-    DIR* dir = opendir(directory);
-    if (!dir) return NULL;
+    FileList* list = (FileList*)calloc(1, sizeof(FileList));
+    if (!list) return NULL;
     
-    SourceFile** files = NULL;
-    int file_count = 0;
-    int capacity = 16;
-    files = (SourceFile**)malloc(capacity * sizeof(SourceFile*));
+    DIR* dir = opendir(dir_path);
+    if (!dir) {
+        free(list);
+        return NULL;
+    }
+    
+    list->paths = NULL;
+    list->num_paths = 0;
     
     struct dirent* entry;
     while ((entry = readdir(dir)) != NULL) {
-        if (entry->d_name[0] == '.') continue;
+        if (entry->d_name[0] == '.') continue;  /* Skip hidden files */
         
-        /* Check for .py extension */
-        const char* name = entry->d_name;
-        size_t len = strlen(name);
-        if (len < 3 || strcmp(name + len - 3, ".py") != 0) continue;
+        /* Check extension */
+        bool match = false;
+        const char* ext = strrchr(entry->d_name, '.');
+        if (ext) {
+            for (int i = 0; i < num_extensions; i++) {
+                if (strcmp(ext, extensions[i]) == 0) {
+                    match = true;
+                    break;
+                }
+            }
+        }
+        
+        if (!match) continue;
         
         /* Build full path */
-        char path[4096];
-        snprintf(path, sizeof(path), "%s/%s", directory, name);
+        char full_path[CIOPT_MAX_PATH_LEN];
+        snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
         
-        /* Load file */
-        SourceFile* file = source_file_load(path);
-        if (file) {
-            if (file_count >= capacity) {
-                capacity *= 2;
-                files = (SourceFile**)realloc(files, capacity * sizeof(SourceFile*));
-            }
-            files[file_count++] = file;
+        /* Check if it's a regular file */
+        struct stat st;
+        if (stat(full_path, &st) != 0 || !S_ISREG(st.st_mode)) continue;
+        
+        /* Add to list */
+        list->num_paths++;
+        list->paths = (char**)realloc(list->paths, list->num_paths * sizeof(char*));
+        if (list->paths) {
+            list->paths[list->num_paths - 1] = ciopt_strdup(full_path);
         }
     }
     
     closedir(dir);
-    *count = file_count;
-    return files;
+    return list;
 }
 
-LoopAnalysis* detect_loops(const char* source, const char* func_name) {
-    (void)source;
-    (void)func_name;
+void file_list_free(FileList* list) {
+    if (!list) return;
+    ciopt_free_string_array(list->paths, list->num_paths);
+    free(list);
+}
+
+/* Stub: Loop detection - In real implementation would parse AST */
+LoopAnalysis* detect_loops(const char* source_code, const char* func_name) {
+    (void)source_code;  /* Would be parsed in real implementation */
     
+    LoopAnalysis* analysis = loop_analysis_create(func_name);
+    /* In real implementation: parse AST and detect loops */
+    return analysis;
+}
+
+LoopAnalysis* loop_analysis_create(const char* func_name) {
     LoopAnalysis* analysis = (LoopAnalysis*)calloc(1, sizeof(LoopAnalysis));
     if (!analysis) return NULL;
     
-    analysis->function_name = str_duplicate(func_name);
+    analysis->function_name = ciopt_strdup(func_name ? func_name : "<unknown>");
     analysis->loops = NULL;
     analysis->num_loops = 0;
-    
-    /* TODO: Parse source and detect loops */
     
     return analysis;
 }
 
-RecursionInfo* detect_recursion(const char* source, const char* func_name) {
-    (void)source;
-    (void)func_name;
+void loop_analysis_free(LoopAnalysis* analysis) {
+    if (!analysis) return;
+    free(analysis->function_name);
     
+    for (int i = 0; i < analysis->num_loops; i++) {
+        LoopDetail* loop = analysis->loops[i];
+        if (loop) {
+            for (int j = 0; j < loop->num_variables; j++) {
+                free(loop->variables[j].name);
+                free(loop->variables[j].iterable);
+            }
+            free(loop->variables);
+            
+            for (int j = 0; j < loop->num_invariant_lines; j++) {
+                /* invariant_lines is int array */
+            }
+            free(loop->invariant_lines);
+            
+            ciopt_free_string_array(loop->expensive_operations, loop->num_expensive_operations);
+            ciopt_free_string_array(loop->function_calls, loop->num_function_calls);
+            
+            free(loop->children);
+            free(loop);
+        }
+    }
+    free(analysis->loops);
+    free(analysis);
+}
+
+/* Stub: Recursion detection */
+RecursionInfo* detect_recursion(const char* source_code, const char* func_name) {
+    (void)source_code;
+    
+    RecursionInfo* info = recursion_info_create(func_name);
+    /* In real implementation: parse AST and detect recursion */
+    return info;
+}
+
+RecursionInfo* recursion_info_create(const char* func_name) {
     RecursionInfo* info = (RecursionInfo*)calloc(1, sizeof(RecursionInfo));
     if (!info) return NULL;
     
-    info->function_name = str_duplicate(func_name);
+    info->function_name = ciopt_strdup(func_name ? func_name : "<unknown>");
+    info->lineno = 0;
+    info->end_lineno = 0;
     info->is_recursive = false;
+    info->direct_calls = NULL;
+    info->num_direct_calls = 0;
+    info->mutual_call_funcs = NULL;
+    info->mutual_call_lines = NULL;
+    info->num_mutual_calls = 0;
     info->has_base_case = false;
+    info->base_case_lines = NULL;
+    info->num_base_cases = 0;
+    info->estimated_branches = 0;
+    info->is_tail_recursive = false;
+    info->tail_recursive_lines = NULL;
+    info->num_tail_recursive = 0;
     info->can_be_memoized = false;
-    
-    /* TODO: Parse source and detect recursion */
+    info->memoization_reason = NULL;
+    info->has_overlapping_subproblems = false;
+    info->depth_pattern = NULL;
     
     return info;
 }
 
-ComplexityResult* estimate_complexity(const char* source, const char* func_name) {
-    (void)source;
-    (void)func_name;
+void recursion_info_free(RecursionInfo* info) {
+    if (!info) return;
+    free(info->function_name);
+    free(info->direct_calls);
     
-    ComplexityResult* result = (ComplexityResult*)calloc(1, sizeof(ComplexityResult));
-    if (!result) return NULL;
-    
-    result->function_name = str_duplicate(func_name);
-    result->estimated_complexity = O_UNKNOWN;
-    result->confidence = 0.5f;
-    
-    /* TODO: Analyze source for complexity estimation */
-    
-    return result;
+    ciopt_free_string_array(info->mutual_call_funcs, info->num_mutual_calls);
+    free(info->mutual_call_lines);
+    free(info->base_case_lines);
+    free(info->tail_recursive_lines);
+    free(info->memoization_reason);
+    free(info->depth_pattern);
+    free(info);
 }
 
-PatternAnalysis* detect_patterns(const char* source, const char* func_name) {
-    (void)source;
-    (void)func_name;
+/* Stub: Data structure analysis */
+DataStructureAnalysis* detect_data_structure_issues(const char* source_code, const char* func_name) {
+    (void)source_code;
     
-    PatternAnalysis* analysis = (PatternAnalysis*)calloc(1, sizeof(PatternAnalysis));
-    if (!analysis) return NULL;
-    
-    analysis->function_name = str_duplicate(func_name);
-    analysis->anti_patterns = NULL;
-    analysis->num_anti_patterns = 0;
-    
-    /* TODO: Detect anti-patterns in source */
-    
+    DataStructureAnalysis* analysis = data_structure_analysis_create(func_name);
     return analysis;
 }
 
-DataStructureAnalysis* detect_data_structure_issues(const char* source, const char* func_name) {
-    (void)source;
-    (void)func_name;
-    
+DataStructureAnalysis* data_structure_analysis_create(const char* func_name) {
     DataStructureAnalysis* analysis = (DataStructureAnalysis*)calloc(1, sizeof(DataStructureAnalysis));
     if (!analysis) return NULL;
     
-    analysis->function_name = str_duplicate(func_name);
+    analysis->function_name = ciopt_strdup(func_name ? func_name : "<unknown>");
     analysis->issues = NULL;
     analysis->num_issues = 0;
-    
-    /* TODO: Detect data structure issues */
     
     return analysis;
 }
 
-DeadCodeAnalysis* detect_dead_code(const char* source) {
-    (void)source;
+void data_structure_analysis_free(DataStructureAnalysis* analysis) {
+    if (!analysis) return;
+    free(analysis->function_name);
     
+    for (int i = 0; i < analysis->num_issues; i++) {
+        DataStructureIssue* issue = analysis->issues[i];
+        if (issue) {
+            free(issue->variable_name);
+            free(issue->current_type);
+            free(issue->suggested_type);
+            free(issue->description);
+            free(issue->suggestion);
+            free(issue->estimated_impact);
+            free(issue);
+        }
+    }
+    free(analysis->issues);
+    free(analysis);
+}
+
+/* Stub: Dead code detection */
+DeadCodeAnalysis* detect_dead_code(const char* source_code) {
+    (void)source_code;
+    
+    DeadCodeAnalysis* analysis = dead_code_analysis_create();
+    return analysis;
+}
+
+DeadCodeAnalysis* dead_code_analysis_create(void) {
     DeadCodeAnalysis* analysis = (DeadCodeAnalysis*)calloc(1, sizeof(DeadCodeAnalysis));
     if (!analysis) return NULL;
     
     analysis->items = NULL;
     analysis->num_items = 0;
     
-    /* TODO: Detect dead code */
+    return analysis;
+}
+
+void dead_code_analysis_free(DeadCodeAnalysis* analysis) {
+    if (!analysis) return;
+    
+    for (int i = 0; i < analysis->num_items; i++) {
+        DeadCodeItem* item = analysis->items[i];
+        if (item) {
+            free(item->name);
+            free(item->description);
+            free(item->suggestion);
+            free(item);
+        }
+    }
+    free(analysis->items);
+    free(analysis);
+}
+
+/* Stub: Pattern detection */
+PatternAnalysis* detect_patterns(const char* source_code, const char* func_name) {
+    (void)source_code;
+    
+    PatternAnalysis* analysis = pattern_analysis_create(func_name);
+    return analysis;
+}
+
+PatternAnalysis* pattern_analysis_create(const char* func_name) {
+    PatternAnalysis* analysis = (PatternAnalysis*)calloc(1, sizeof(PatternAnalysis));
+    if (!analysis) return NULL;
+    
+    analysis->function_name = ciopt_strdup(func_name ? func_name : "<unknown>");
+    analysis->anti_patterns = NULL;
+    analysis->num_patterns = 0;
     
     return analysis;
+}
+
+void pattern_analysis_free(PatternAnalysis* analysis) {
+    if (!analysis) return;
+    free(analysis->function_name);
+    
+    for (int i = 0; i < analysis->num_patterns; i++) {
+        AntiPattern* pattern = analysis->anti_patterns[i];
+        if (pattern) {
+            free(pattern->name);
+            free(pattern->description);
+            free(pattern->suggestion);
+            free(pattern->estimated_impact);
+            free(pattern->code_snippet);
+            free(pattern);
+        }
+    }
+    free(analysis->anti_patterns);
+    free(analysis);
+}
+
+/* Stub: Complexity estimation */
+ComplexityResult* estimate_complexity(const char* source_code, const char* func_name) {
+    (void)source_code;
+    
+    ComplexityResult* result = complexity_result_create(func_name);
+    result->estimated_complexity = O_N;  /* Default assumption */
+    result->confidence = 0.5;
+    
+    /* Run sub-analyses */
+    result->loop_analysis = detect_loops(source_code, func_name);
+    result->recursion_info = detect_recursion(source_code, func_name);
+    
+    return result;
+}
+
+ComplexityResult* complexity_result_create(const char* func_name) {
+    ComplexityResult* result = (ComplexityResult*)calloc(1, sizeof(ComplexityResult));
+    if (!result) return NULL;
+    
+    result->function_name = ciopt_strdup(func_name ? func_name : "<unknown>");
+    result->lineno = 0;
+    result->end_lineno = 0;
+    result->estimated_complexity = O_UNKNOWN;
+    result->confidence = 0.0;
+    result->explanations = NULL;
+    result->num_explanations = 0;
+    result->loop_analysis = NULL;
+    result->recursion_info = NULL;
+    result->bottleneck_lines = NULL;
+    result->num_bottleneck_lines = 0;
+    result->bottleneck_description = NULL;
+    result->warnings = NULL;
+    result->num_warnings = 0;
+    
+    return result;
+}
+
+void complexity_result_free(ComplexityResult* result) {
+    if (!result) return;
+    free(result->function_name);
+    
+    for (int i = 0; i < result->num_explanations; i++) {
+        ComplexityExplanation* exp = result->explanations[i];
+        if (exp) {
+            free(exp->source);
+            free(exp->description);
+            free(exp->detail);
+            free(exp);
+        }
+    }
+    free(result->explanations);
+    
+    loop_analysis_free(result->loop_analysis);
+    recursion_info_free(result->recursion_info);
+    free(result->bottleneck_lines);
+    free(result->bottleneck_description);
+    ciopt_free_string_array(result->warnings, result->num_warnings);
+    free(result);
 }
 
 /* ============================================================================
  * Main Analysis Functions
  * ============================================================================ */
 
-static FunctionReport* analyze_function_stub(const char* name, int lineno, int end_lineno) {
-    FunctionReport* report = (FunctionReport*)calloc(1, sizeof(FunctionReport));
+FileReport* analyze_file(const char* file_path, AnalysisConfig* config) {
+    if (!file_path) return NULL;
+    
+    FileReport* report = file_report_create(file_path);
     if (!report) return NULL;
     
-    report->name = str_duplicate(name);
-    report->lineno = lineno;
-    report->end_lineno = end_lineno;
-    report->line_count = end_lineno - lineno + 1;
-    
-    /* Create stub complexity result */
-    report->complexity = (ComplexityResult*)calloc(1, sizeof(ComplexityResult));
-    if (report->complexity) {
-        report->complexity->function_name = str_duplicate(name);
-        report->complexity->lineno = lineno;
-        report->complexity->end_lineno = end_lineno;
-        report->complexity->estimated_complexity = O_N;
-        report->complexity->confidence = 0.5f;
+    /* Load source */
+    char* source = load_source_file(file_path);
+    if (!source) {
+        /* Could not load file */
+        return report;
     }
     
-    report->severity = SEVERITY_INFO;
+    /* Count lines */
+    report->file_size = strlen(source);
+    int total = 0, code = 0, comments = 0, blank = 0;
     
-    return report;
-}
-
-AnalysisReport* analyze(const char* path, AnalysisConfig* config) {
-    if (!path || !config) return NULL;
-    
-    AnalysisReport* report = (AnalysisReport*)calloc(1, sizeof(AnalysisReport));
-    if (!report) return NULL;
-    
-    report->timestamp = get_timestamp_iso();
-    report->fiopt_version = str_duplicate(CIOPT_VERSION);
-    report->files = NULL;
-    report->num_files = 0;
-    
-    /* Check if path is a file or directory */
-    struct stat st;
-    if (stat(path, &st) != 0) {
-        analysis_report_free(report);
-        return NULL;
-    }
-    
-    SourceFile** files = NULL;
-    int file_count = 0;
-    
-    if (S_ISDIR(st.st_mode)) {
-        /* Scan directory */
-        files = scan_project(path, &file_count);
-    } else {
-        /* Single file */
-        SourceFile* file = source_file_load(path);
-        if (file) {
-            file_count = 1;
-            files = (SourceFile**)malloc(sizeof(SourceFile*));
-            files[0] = file;
-        }
-    }
-    
-    if (!files || file_count == 0) {
-        analysis_report_free(report);
-        return NULL;
-    }
-    
-    /* Allocate file reports */
-    report->num_files = file_count;
-    report->files = (FileReport**)malloc(file_count * sizeof(FileReport*));
-    
-    for (int i = 0; i < file_count; i++) {
-        SourceFile* src = files[i];
+    char* line = source;
+    char* next;
+    while ((next = strchr(line, '\n')) != NULL || *line) {
+        total++;
         
-        FileReport* file_report = (FileReport*)calloc(1, sizeof(FileReport));
-        if (!file_report) continue;
+        /* Find line length */
+        int len = next ? (next - line) : (int)strlen(line);
         
-        file_report->filepath = str_duplicate(src->path);
-        file_report->line_count = src->line_count;
-        file_report->function_reports = NULL;
-        file_report->num_function_reports = 0;
+        /* Check line type */
+        bool is_blank = true;
+        bool is_comment = false;
         
-        /* Create stub function reports based on line count */
-        /* In a real implementation, we would parse the source to find actual functions */
-        int num_stub_functions = src->line_count / 10 + 1;
-        if (num_stub_functions > 20) num_stub_functions = 20;
-        
-        file_report->num_function_reports = num_stub_functions;
-        file_report->function_reports = (FunctionReport**)malloc(
-            num_stub_functions * sizeof(FunctionReport*)
-        );
-        
-        for (int j = 0; j < num_stub_functions; j++) {
-            char func_name[64];
-            snprintf(func_name, sizeof(func_name), "function_%d", j + 1);
-            
-            int start_line = j * 10 + 1;
-            int end_line = start_line + 9;
-            if (end_line > src->line_count) end_line = src->line_count;
-            
-            file_report->function_reports[j] = analyze_function_stub(
-                func_name, start_line, end_line
-            );
-        }
-        
-        /* Run dead code detection if enabled */
-        if (config->detect_dead_code) {
-            file_report->dead_code = detect_dead_code(src->content);
-        }
-        
-        report->files[i] = file_report;
-    }
-    
-    /* Clean up source files */
-    for (int i = 0; i < file_count; i++) {
-        source_file_free(files[i]);
-    }
-    free(files);
-    
-    return report;
-}
-
-AnalysisReport* analyze_source(const char* source, const char* filename, AnalysisConfig* config) {
-    (void)filename;
-    (void)config;
-    
-    /* Write source to temp file and analyze */
-    FILE* f = fopen("/tmp/ciopt_temp.py", "w");
-    if (!f) return NULL;
-    
-    fputs(source, f);
-    fclose(f);
-    
-    AnalysisReport* report = analyze("/tmp/ciopt_temp.py", config);
-    
-    remove("/tmp/ciopt_temp.py");
-    
-    return report;
-}
-
-/* ============================================================================
- * Reporting Functions
- * ============================================================================ */
-
-void render_terminal(AnalysisReport* report, bool verbose) {
-    if (!report) return;
-    
-    char* summary = analysis_report_summary(report);
-    if (summary) {
-        printf("%s\n", summary);
-        free(summary);
-    }
-    
-    if (verbose) {
-        printf("\nDetailed Report:\n");
-        printf("==================================================\n");
-        
-        for (int i = 0; i < report->num_files; i++) {
-            FileReport* file = report->files[i];
-            printf("\nFile: %s (%d lines)\n", 
-                   file->filepath ? file->filepath : "unknown",
-                   file->line_count);
-            
-            for (int j = 0; j < file->num_function_reports; j++) {
-                FunctionReport* func = file->function_reports[j];
-                char* func_summary = function_report_summary(func);
-                if (func_summary) {
-                    printf("  %s\n", func_summary);
-                    free(func_summary);
+        for (int i = 0; i < len; i++) {
+            if (!isspace(line[i])) {
+                is_blank = false;
+                if (line[i] == '#') {
+                    is_comment = true;
                 }
-                
-                if (func->complexity && func->complexity->num_explanations > 0) {
-                    printf("    Complexity: %s (confidence: %.0f%%)\n",
-                           complexity_to_string(func->complexity->estimated_complexity),
-                           func->complexity->confidence * 100.0f);
-                }
+                break;
             }
         }
-    }
-}
-
-int save_html_report(AnalysisReport* report, const char* output_path) {
-    if (!report || !output_path) return -1;
-    
-    FILE* f = fopen(output_path, "w");
-    if (!f) return -1;
-    
-    fprintf(f, "<!DOCTYPE html>\n<html>\n<head>\n");
-    fprintf(f, "<title>CiOpt Analysis Report</title>\n");
-    fprintf(f, "<style>\n");
-    fprintf(f, "body { font-family: Arial, sans-serif; margin: 20px; }\n");
-    fprintf(f, "h1 { color: #333; }\n");
-    fprintf(f, ".summary { background: #f5f5f5; padding: 15px; border-radius: 5px; }\n");
-    fprintf(f, ".critical { color: red; }\n");
-    fprintf(f, ".warning { color: orange; }\n");
-    fprintf(f, "table { border-collapse: collapse; width: 100%%; }\n");
-    fprintf(f, "th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }\n");
-    fprintf(f, "th { background-color: #4CAF50; color: white; }\n");
-    fprintf(f, "</style>\n");
-    fprintf(f, "</head>\n<body>\n");
-    
-    fprintf(f, "<h1>FiOpt/CiOpt Analysis Report</h1>\n");
-    fprintf(f, "<div class=\"summary\">\n");
-    fprintf(f, "<p><strong>Files analyzed:</strong> %d</p>\n", analysis_report_total_files(report));
-    fprintf(f, "<p><strong>Functions analyzed:</strong> %d</p>\n", analysis_report_total_functions(report));
-    fprintf(f, "<p><strong>Total lines:</strong> %d</p>\n", analysis_report_total_lines(report));
-    fprintf(f, "<p><strong>Worst complexity:</strong> %s</p>\n", analysis_report_complexity(report));
-    fprintf(f, "<p><strong>Total issues:</strong> %d</p>\n", analysis_report_total_issues(report));
-    fprintf(f, "</div>\n");
-    
-    fprintf(f, "<h2>Files</h2>\n<table>\n");
-    fprintf(f, "<tr><th>File</th><th>Lines</th><th>Functions</th><th>Issues</th><th>Worst Complexity</th></tr>\n");
-    
-    for (int i = 0; i < report->num_files; i++) {
-        FileReport* file = report->files[i];
-        fprintf(f, "<tr>");
-        fprintf(f, "<td>%s</td>", file->filepath ? file->filepath : "unknown");
-        fprintf(f, "<td>%d</td>", file->line_count);
-        fprintf(f, "<td>%d</td>", file_report_total_functions(file));
-        fprintf(f, "<td>%d</td>", file_report_total_issues(file));
-        fprintf(f, "<td>%s</td>", complexity_to_string(file_report_worst_complexity(file)));
-        fprintf(f, "</tr>\n");
+        
+        if (is_blank) blank++;
+        else if (is_comment) comments++;
+        else code++;
+        
+        if (!next) break;
+        line = next + 1;
     }
     
-    fprintf(f, "</table>\n");
-    fprintf(f, "</body>\n</html>\n");
+    report->total_lines = total;
+    report->code_lines = code;
+    report->comment_lines = comments;
+    report->blank_lines = blank;
     
-    fclose(f);
-    return 0;
+    /* Calculate maintainability index (simplified) */
+    if (total > 0) {
+        report->maintainability_index = 100.0 * (1.0 - ((double)code / total) * 0.5);
+    } else {
+        report->maintainability_index = 100.0;
+    }
+    
+    /* In a full implementation, we would:
+     * 1. Parse the AST
+     * 2. Find all function definitions
+     * 3. Analyze each function
+     * 4. Populate report->functions array
+     */
+    
+    free(source);
+    return report;
 }
 
-char* render_json(AnalysisReport* report) {
+AnalysisReport* analyze_project(const char* project_path, AnalysisConfig* config) {
+    if (!project_path) return NULL;
+    
+    AnalysisReport* report = analysis_report_create(project_path);
     if (!report) return NULL;
     
-    size_t buf_size = 8192;
-    char* buffer = (char*)malloc(buf_size);
-    if (!buffer) return NULL;
+    /* Scan for source files */
+    FileList* files = scan_directory(project_path, 
+                                      (const char**)config->file_extensions,
+                                      config->num_extensions);
     
-    size_t offset = 0;
-    offset += snprintf(buffer + offset, buf_size - offset, "{\n");
-    offset += snprintf(buffer + offset, buf_size - offset,
-        "  \"version\": \"%s\",\n", report->fiopt_version ? report->fiopt_version : "0.1.0");
-    offset += snprintf(buffer + offset, buf_size - offset,
-        "  \"timestamp\": \"%s\",\n", report->timestamp ? report->timestamp : "");
-    offset += snprintf(buffer + offset, buf_size - offset,
-        "  \"duration_ms\": %.2f,\n", report->analysis_duration_ms);
-    offset += snprintf(buffer + offset, buf_size - offset,
-        "  \"total_files\": %d,\n", analysis_report_total_files(report));
-    offset += snprintf(buffer + offset, buf_size - offset,
-        "  \"total_functions\": %d,\n", analysis_report_total_functions(report));
-    offset += snprintf(buffer + offset, buf_size - offset,
-        "  \"total_lines\": %d,\n", analysis_report_total_lines(report));
-    offset += snprintf(buffer + offset, buf_size - offset,
-        "  \"worst_complexity\": \"%s\",\n", analysis_report_complexity(report));
-    offset += snprintf(buffer + offset, buf_size - offset,
-        "  \"total_issues\": %d,\n", analysis_report_total_issues(report));
-    offset += snprintf(buffer + offset, buf_size - offset, "  \"files\": [\n");
-    
-    for (int i = 0; i < report->num_files; i++) {
-        FileReport* file = report->files[i];
-        offset += snprintf(buffer + offset, buf_size - offset, "    {\n");
-        offset += snprintf(buffer + offset, buf_size - offset,
-            "      \"path\": \"%s\",\n", file->filepath ? file->filepath : "");
-        offset += snprintf(buffer + offset, buf_size - offset,
-            "      \"lines\": %d,\n", file->line_count);
-        offset += snprintf(buffer + offset, buf_size - offset,
-            "      \"functions\": %d,\n", file_report_total_functions(file));
-        offset += snprintf(buffer + offset, buf_size - offset,
-            "      \"issues\": %d,\n", file_report_total_issues(file));
-        offset += snprintf(buffer + offset, buf_size - offset,
-            "      \"worst_complexity\": \"%s\"\n", 
-            complexity_to_string(file_report_worst_complexity(file)));
-        offset += snprintf(buffer + offset, buf_size - offset, 
-            "    }%s\n", (i < report->num_files - 1) ? "," : "");
+    if (!files) {
+        report->errors = (char**)malloc(sizeof(char*));
+        if (report->errors) {
+            report->errors[0] = ciopt_strdup("Failed to scan directory");
+            report->num_errors = 1;
+        }
+        return report;
     }
     
-    offset += snprintf(buffer + offset, buf_size - offset, "  ]\n");
-    offset += snprintf(buffer + offset, buf_size - offset, "}\n");
+    /* Analyze each file */
+    report->files = (FileReport**)calloc(files->num_paths, sizeof(FileReport*));
+    report->num_files = 0;
     
-    return buffer;
-}
-
-int save_json_report(AnalysisReport* report, const char* output_path) {
-    if (!report || !output_path) return -1;
-    
-    char* json = render_json(report);
-    if (!json) return -1;
-    
-    FILE* f = fopen(output_path, "w");
-    if (!f) {
-        free(json);
-        return -1;
+    for (int i = 0; i < files->num_paths; i++) {
+        FileReport* fr = analyze_file(files->paths[i], config);
+        if (fr) {
+            report->files[report->num_files++] = fr;
+            
+            /* Update summary */
+            report->summary.total_files++;
+            report->summary.total_functions += fr->num_functions;
+            report->summary.total_lines += fr->total_lines;
+            report->summary.total_code_lines += fr->code_lines;
+        }
     }
     
-    fputs(json, f);
-    fclose(f);
-    free(json);
+    /* Calculate averages */
+    if (report->summary.total_functions > 0) {
+        report->summary.avg_function_length = 
+            (double)report->summary.total_code_lines / report->summary.total_functions;
+    }
     
-    return 0;
+    file_list_free(files);
+    return report;
 }
