@@ -68,9 +68,9 @@ FunctionReport* function_report_create(
     
     report->function_name = ciopt_strdup(func && func->name ? func->name : "<unknown>");
     report->file_path = ciopt_strdup("");
-    report->lineno = func ? func->lineno : 0;
-    report->end_lineno = func ? func->end_lineno : 0;
-    report->line_count = func ? func->line_count : 0;
+    report->lineno = 0;
+    report->end_lineno = 0;
+    report->line_count = 0;
     report->complexity = complexity;  /* Takes ownership */
     report->loops = loops;            /* Takes ownership */
     report->recursion = recursion;    /* Takes ownership */

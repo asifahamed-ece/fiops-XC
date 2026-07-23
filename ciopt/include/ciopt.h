@@ -199,6 +199,44 @@ IRNode* ir_node_create(IROpcode opcode, int lineno);
 void ir_node_free(IRNode* node);
 
 /* ============================================================================
+ * IR Node List (for function bodies)
+ * ============================================================================ */
+
+typedef struct IRNodeList {
+    IRNode** nodes;
+    int count;
+    int capacity;
+} IRNodeList;
+
+/* Create IR node list */
+IRNodeList* ir_node_list_create(void);
+
+/* Free IR node list */
+void ir_node_list_free(IRNodeList* list);
+
+/* Add node to list */
+void ir_node_list_add(IRNodeList* list, IRNode* node);
+
+/* ============================================================================
+ * IR Function
+ * ============================================================================ */
+
+/* Forward declaration of CFG */
+struct CFG;
+
+typedef struct IRFunction {
+    char* name;
+    struct CFG* cfg;
+    IRNodeList* body;
+} IRFunction;
+
+/* Create IR function */
+IRFunction* ir_function_create(const char* name);
+
+/* Free IR function */
+void ir_function_free(IRFunction* func);
+
+/* ============================================================================
  * Basic Blocks for CFG
  * ============================================================================ */
 
@@ -637,12 +675,6 @@ FileList* scan_directory(const char* dir_path, const char** extensions, int num_
 void file_list_free(FileList* list);
 
 /* Parse C source file into IR function */
-typedef struct IRFunction {
-    char* name;
-    CFG* cfg;
-    struct IRNodeList* body;
-} IRFunction;
-
 IRFunction* ciopt_parse_file(const char* filename);
 
 /* Analyze a C file with full pipeline (parse + analyze + report) */

@@ -9,6 +9,7 @@
 #include "ciopt.h"
 #include <dirent.h>
 #include <sys/stat.h>
+#include <ctype.h>
 
 /* ============================================================================
  * Stub Analysis Functions
@@ -385,8 +386,10 @@ void complexity_result_free(ComplexityResult* result) {
 
 FileReport* analyze_file(const char* file_path, AnalysisConfig* config) {
     if (!file_path) return NULL;
+    (void)config; /* Unused for now */
     
-    FileReport* report = file_report_create(file_path);
+    /* Create empty file report */
+    FileReport* report = file_report_create(file_path, NULL, 0);
     if (!report) return NULL;
     
     /* Load source */
