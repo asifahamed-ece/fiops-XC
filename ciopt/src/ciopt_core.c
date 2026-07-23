@@ -328,6 +328,77 @@ void basic_block_add_predecessor(BasicBlock* block, int pred_id) {
 }
 
 /* ============================================================================
+ * IR Node List Implementation
+ * ============================================================================ */
+
+IRNodeList* ir_node_list_create(void) {
+    IRNodeList* list = (IRNodeList*)calloc(1, sizeof(IRNodeList));
+    if (!list) return NULL;
+    
+    list->capacity = 16;
+    list->count = 0;
+    list->nodes = (IRNode**)malloc(list->capacity * sizeof(IRNode*));
+    if (!list->nodes) {
+        free(list);
+        return NULL;
+    }
+    
+    return list;
+}
+
+void ir_node_list_free(IRNodeList* list) {
+    if (!list) return;
+    
+    /* Free all nodes in the list */
+    for (int i = 0; i < list->count; i++) {
+        ir_node_free(list->nodes[i]);
+    }
+    free(list->nodes);
+    free(list);
+}
+
+void ir_node_list_add(IRNodeList* list, IRNode* node) {
+    if (!list || !node) return;
+    
+    if (list->count >= list->capacity) {
+        list->capacity *= 2;
+        list->nodes = (IRNode**)realloc(list->nodes, 
+                                         list->capacity * sizeof(IRNode*));
+        if (!list->nodes) return;
+    }
+    
+    list->nodes[list->count++] = node;
+}
+
+/* ============================================================================
+ * IR Function Implementation
+ * ============================================================================ */
+
+IRFunction* ir_function_create(const char* name) {
+    IRFunction* func = (IRFunction*)calloc(1, sizeof(IRFunction));
+    if (!func) return NULL;
+    
+    func->name = ciopt_strdup(name ? name : "<unknown>");
+    func->cfg = NULL;
+    func->body = ir_node_list_create();
+    
+    return func;
+}
+
+void ir_function_free(IRFunction* func) {
+    if (!func) return;
+    
+    free(func->name);
+    if (func->cfg) {
+        cfg_free(func->cfg);
+    }
+    if (func->body) {
+        ir_node_list_free(func->body);
+    }
+    free(func);
+}
+
+/* ============================================================================
  * CFG Implementation
  * ============================================================================ */
 
